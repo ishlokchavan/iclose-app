@@ -1,5 +1,24 @@
 import { supabase } from '../client';
-import type { Profile } from '../../../types/database';
+import type { Profile, UserRole } from '../../../types/database';
+
+export interface FullUserProfile {
+  // from profiles
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  role: UserRole;
+  plan_key: string;
+  created_at: string;
+  updated_at: string;
+  // from leads (null if user has no matching lead record)
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  source: string | null;
+  is_verified: boolean | null;
+  verified_at: string | null;
+}
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -47,6 +66,12 @@ export async function updateUserRole(
     .update({ role, updated_at: new Date().toISOString() })
     .eq('id', userId);
   if (error) throw error;
+}
+
+export async function fetchFullUserProfile(userId: string): Promise<FullUserProfile | null> {
+  const { data, error } = await supabase.rpc('get_full_user_profile', { p_id: userId });
+  if (error) throw error;
+  return data as FullUserProfile | null;
 }
 
 export async function deleteProfile(userId: string): Promise<void> {

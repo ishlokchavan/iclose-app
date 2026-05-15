@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
   fetchAllProfiles,
+  fetchFullUserProfile,
   updateProfile,
   deleteProfile,
 } from '../../../lib/supabase/queries/profiles';
@@ -132,11 +133,20 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
     }
   }, [user?.id]);
 
+  // Fetch enriched profile (profiles + leads join) when modal opens
+  const { data: full, isLoading: fullLoading } = useQuery({
+    queryKey: ['fullUserProfile', user?.id],
+    queryFn: () => fetchFullUserProfile(user!.id),
+    enabled: !!user,
+    staleTime: 1000 * 60 * 2,
+  });
+
   const updateMutation = useMutation({
     mutationFn: (updates: Partial<Pick<Profile, 'full_name' | 'role'>>) =>
       updateProfile(user!.id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allProfiles'] });
+      queryClient.invalidateQueries({ queryKey: ['fullUserProfile', user?.id] });
       setMode('view');
     },
     onError: (err: any) => {
@@ -195,6 +205,11 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
     );
   };
 
+  // Derived display name — prefer first+last from lead, fall back to full_name
+  const displayName = full
+    ? [full.first_name, full.last_name].filter(Boolean).join(' ') || full.full_name || 'Unnamed'
+    : user?.full_name ?? 'Unnamed';
+
   return (
     <Modal
       visible={!!user}
@@ -234,7 +249,7 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
               />
               <View style={{ flex: 1, marginLeft: 14 }}>
                 <Text style={styles.identityName} numberOfLines={1}>
-                  {user?.full_name ?? 'Unnamed'}
+                  {displayName}
                 </Text>
                 <Text style={styles.identityEmail} numberOfLines={1}>
                   {user?.email ?? '—'}
@@ -257,14 +272,30 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
             >
               {mode === 'view' ? (
                 <>
-                  {/* Contact */}
+                  {/* Contact — enriched with lead data */}
                   <SectionHeader title="Contact" />
                   <View style={styles.card}>
-                    <DetailRow label="Full name" value={user?.full_name ?? '—'} />
+                    <DetailRow label="First name" value={full?.first_name ?? '—'} />
+                    <DetailRow label="Last name" value={full?.last_name ?? '—'} />
                     <DetailRow label="Email" value={user?.email ?? '—'} />
+                    <DetailRow label="Phone" value={full?.phone ?? '—'} />
                     <DetailRow
                       label="Plan"
-                      value={user ? capitalize(user.plan_key ?? 'free') : '—'}
+                      value={capitalize(user?.plan_key ?? 'free')}
+                    />
+                    <DetailRow
+                      label="Verified"
+                      value={
+                        full?.is_verified && full.verified_at
+                          ? fmtDate(full.verified_at)
+                          : full?.is_verified
+                          ? 'Yes'
+                          : 'Not verified'
+                      }
+                    />
+                    <DetailRow
+                      label="Source"
+                      value={full?.source ? capitalize(full.source.replace(/_/g, ' ')) : '—'}
                       isLast
                     />
                   </View>

@@ -23,7 +23,6 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   fetchAllProfiles,
   fetchFullUserProfile,
-  updateProfile,
   deleteProfile,
   upsertUserLead,
   inviteTeamMember,
@@ -45,13 +44,6 @@ const TAB_CONFIG: { label: string; value: UserTab; roles: UserRole[] }[] = [
   { label: 'Learners', value: 'learners', roles: ['learner'] },
   { label: 'Staff',    value: 'staff',    roles: ['educator', 'manager'] },
   { label: 'Admin',    value: 'admin',    roles: ['admin'] },
-];
-
-const ALL_ROLES: { value: UserRole; label: string }[] = [
-  { value: 'learner',  label: 'Learner' },
-  { value: 'educator', label: 'Educator' },
-  { value: 'manager',  label: 'Manager' },
-  { value: 'admin',    label: 'Admin' },
 ];
 
 function fmtDateTime(iso: string) {
@@ -92,10 +84,7 @@ function DetailRow({
         {verified ? (
           <Ionicons name="checkmark-circle" size={14} color="#16a34a" style={{ marginRight: 4 }} />
         ) : null}
-        <Text
-          style={[styles.detailValue, verified && { color: '#16a34a' }]}
-          numberOfLines={2}
-        >
+        <Text style={[styles.detailValue, verified && { color: '#16a34a' }]} numberOfLines={2}>
           {value}
         </Text>
       </View>
@@ -138,17 +127,15 @@ function EditField({
 
 function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
+  const [name, setName]   = useState('');
   const [email, setEmail] = useState('');
-
-  const reset = () => { setName(''); setEmail(''); };
 
   const inviteMutation = useMutation({
     mutationFn: () => inviteTeamMember(email.trim(), name.trim()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allProfiles'] });
       Alert.alert('Invitation sent', `An invite email has been sent to ${email.trim()}.`);
-      reset();
+      setName(''); setEmail('');
       onClose();
     },
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to send invitation.'),
@@ -160,13 +147,7 @@ function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => vo
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView
         style={styles.inviteBackdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -179,30 +160,14 @@ function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => vo
               <Ionicons name="close" size={18} color="#6e6e73" />
             </TouchableOpacity>
           </View>
-
           <Text style={styles.inviteSubtitle}>
             They'll receive an email with a link to set their password.
           </Text>
-
-          <EditField
-            label="Full name"
-            value={name}
-            onChangeText={setName}
-            placeholder="Sarah Al-Mansouri"
-            autoCapitalize="words"
-          />
-          <EditField
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="sarah@company.ae"
-            keyboardType="email-address"
-          />
-
+          <EditField label="Full name" value={name} onChangeText={setName} placeholder="Sarah Al-Mansouri" autoCapitalize="words" />
+          <EditField label="Email" value={email} onChangeText={setEmail} placeholder="sarah@company.ae" keyboardType="email-address" />
           <Text style={styles.inviteNote}>
             Invitee will be added as a <Text style={{ fontWeight: '700' }}>Manager</Text>.
           </Text>
-
           <TouchableOpacity
             style={[styles.inviteSendBtn, inviteMutation.isPending && { opacity: 0.7 }]}
             onPress={handleSend}
@@ -211,10 +176,8 @@ function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => vo
           >
             {inviteMutation.isPending
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.inviteSendText}>Send invitation</Text>
-            }
+              : <Text style={styles.inviteSendText}>Send invitation</Text>}
           </TouchableOpacity>
-
           <TouchableOpacity style={styles.inviteCancelBtn} onPress={onClose} activeOpacity={0.7}>
             <Text style={styles.inviteCancelText}>Cancel</Text>
           </TouchableOpacity>
@@ -228,50 +191,48 @@ function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => vo
 
 interface UserDetailProps {
   user: Profile | null;
+  currentUserId: string | null;
   canEditContact: boolean;
-  canEditRole: boolean;
   onClose: () => void;
 }
 
-function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDetailProps) {
+function UserDetailScreen({ user, currentUserId, canEditContact, onClose }: UserDetailProps) {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const translateX = useRef(new Animated.Value(SCREEN_W)).current;
   const [cachedUser, setCachedUser] = useState<Profile | null>(null);
   const [mode, setMode] = useState<DetailMode>('view');
 
-  // Edit fields
-  const [editFirstName, setEditFirstName] = useState('');
-  const [editLastName,  setEditLastName]  = useState('');
-  const [editPhone,     setEditPhone]     = useState('');
+  // Staff = manager / admin / educator — simplified view, no contact section
+  const isStaffUser = !!cachedUser && cachedUser.role !== 'learner';
+  const isSelf      = !!cachedUser && cachedUser.id === currentUserId;
+
+  // Edit state
+  const [editFullName,  setEditFullName]  = useState(''); // staff: single full-name field
+  const [editFirstName, setEditFirstName] = useState(''); // learner
+  const [editLastName,  setEditLastName]  = useState(''); // learner
+  const [editPhone,     setEditPhone]     = useState(''); // learner
   const [editEmail,     setEditEmail]     = useState('');
-  const [editRole,      setEditRole]      = useState<UserRole>('learner');
 
   // Slide in when a new user is selected
   useEffect(() => {
     if (user) {
       setCachedUser(user);
       setMode('view');
-      setEditRole(user.role);
       translateX.setValue(SCREEN_W);
       Animated.spring(translateX, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 65,
-        friction: 11,
+        toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
       }).start();
     }
   }, [user?.id]);
 
   const handleClose = () => {
     Animated.timing(translateX, {
-      toValue: SCREEN_W,
-      duration: 220,
-      useNativeDriver: true,
+      toValue: SCREEN_W, duration: 220, useNativeDriver: true,
     }).start(() => onClose());
   };
 
-  // Fetch enriched profile (profiles + leads)
+  // Fetch enriched profile (profiles + leads join)
   const { data: full, isLoading: fullLoading } = useQuery({
     queryKey: ['fullUserProfile', cachedUser?.id],
     queryFn: () => fetchFullUserProfile(cachedUser!.id),
@@ -279,9 +240,16 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
     staleTime: 1000 * 60 * 2,
   });
 
-  // Populate edit fields when full profile arrives
+  // Populate edit fields when data arrives
   useEffect(() => {
-    if (full) {
+    if (cachedUser) {
+      setEditFullName(cachedUser.full_name ?? '');
+      setEditEmail(cachedUser.email ?? '');
+    }
+  }, [cachedUser?.id]);
+
+  useEffect(() => {
+    if (full && !isStaffUser) {
       setEditFirstName(full.first_name ?? '');
       setEditLastName(full.last_name ?? '');
       setEditPhone(full.phone ?? '');
@@ -292,30 +260,33 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!editEmail.trim()) throw new Error('Email cannot be empty.');
-      await upsertUserLead(cachedUser!.id, {
-        first_name: editFirstName.trim(),
-        last_name:  editLastName.trim(),
-        phone:      editPhone.trim(),
-        email:      editEmail.trim(),
-      });
-      if (canEditRole && editRole !== cachedUser!.role) {
-        await updateProfile(cachedUser!.id, { role: editRole });
+      if (isStaffUser) {
+        await upsertUserLead(cachedUser!.id, {
+          first_name: editFullName.trim(),
+          last_name:  '',
+          phone:      '',
+          email:      editEmail.trim(),
+        });
+      } else {
+        await upsertUserLead(cachedUser!.id, {
+          first_name: editFirstName.trim(),
+          last_name:  editLastName.trim(),
+          phone:      editPhone.trim(),
+          email:      editEmail.trim(),
+        });
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['allProfiles'] });
       queryClient.invalidateQueries({ queryKey: ['fullUserProfile', cachedUser?.id] });
-      // Reflect email in cached user immediately
       setCachedUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              email: editEmail.trim() || prev.email,
-              full_name:
-                [editFirstName, editLastName].filter(Boolean).join(' ') || prev.full_name,
-              role: editRole,
-            }
-          : prev,
+        prev ? {
+          ...prev,
+          email: editEmail.trim() || prev.email,
+          full_name: isStaffUser
+            ? (editFullName.trim() || prev.full_name)
+            : ([editFirstName, editLastName].filter(Boolean).join(' ') || prev.full_name),
+        } : prev,
       );
       setMode('view');
     },
@@ -332,13 +303,6 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
       Alert.alert('Cannot Delete', err?.message ?? 'Failed to delete. User may have associated data.'),
   });
 
-  const handleRolePicker = () => {
-    Alert.alert('Change Role', `Current: ${capitalize(editRole)}`, [
-      ...ALL_ROLES.map((r) => ({ text: r.label, onPress: () => setEditRole(r.value) })),
-      { text: 'Cancel', style: 'cancel' as const },
-    ]);
-  };
-
   const handleDelete = () => {
     Alert.alert(
       'Delete User',
@@ -350,19 +314,14 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
     );
   };
 
-  const displayName = full
+  const displayName = full && !isStaffUser
     ? [full.first_name, full.last_name].filter(Boolean).join(' ') || full.full_name || 'Unnamed'
     : cachedUser?.full_name ?? 'Unnamed';
 
   return (
-    <Modal
-      visible={!!user}
-      transparent
-      animationType="none"
-      onRequestClose={handleClose}
-      statusBarTranslucent
-    >
+    <Modal visible={!!user} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
       <Animated.View style={[styles.detailScreen, { transform: [{ translateX }] }]}>
+
         {/* Navigation bar */}
         <View style={[styles.detailNav, { paddingTop: insets.top + 6 }]}>
           <TouchableOpacity style={styles.detailNavBack} onPress={handleClose} activeOpacity={0.7}>
@@ -373,81 +332,84 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
           <View style={{ width: 72 }} />
         </View>
 
+        {/* Compact horizontal identity */}
+        <View style={styles.detailIdentity}>
+          <Avatar name={cachedUser?.full_name} imageUrl={cachedUser?.avatar_url} size={52} />
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.detailName} numberOfLines={1}>{displayName}</Text>
+            <Text style={styles.detailEmail} numberOfLines={1}>{cachedUser?.email ?? '—'}</Text>
+            {cachedUser?.role ? <View style={{ marginTop: 5 }}><RoleBadge role={cachedUser.role} /></View> : null}
+          </View>
+        </View>
+
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         >
-          {/* Identity */}
-          <View style={styles.detailIdentity}>
-            <Avatar
-              name={cachedUser?.full_name}
-              imageUrl={cachedUser?.avatar_url}
-              size={72}
-            />
-            <Text style={styles.detailName}>{displayName}</Text>
-            <Text style={styles.detailEmail}>{cachedUser?.email ?? '—'}</Text>
-            {cachedUser?.role ? (
-              <View style={{ marginTop: 8 }}>
-                <RoleBadge role={cachedUser.role} />
-              </View>
-            ) : null}
-          </View>
-
           {fullLoading ? (
-            <View style={styles.detailLoading}>
+            <View style={{ paddingVertical: 32, alignItems: 'center' }}>
               <ActivityIndicator color="#0071e3" />
             </View>
           ) : mode === 'view' ? (
             <>
-              <SectionLabel title="Contact" />
-              <View style={styles.card}>
-                <DetailRow label="First name" value={full?.first_name ?? '—'} />
-                <DetailRow label="Last name"  value={full?.last_name  ?? '—'} />
-                <DetailRow label="Email"      value={cachedUser?.email ?? '—'} />
-                <DetailRow label="Phone"      value={full?.phone ?? '—'} />
-                <DetailRow label="Plan"       value={capitalize(cachedUser?.plan_key ?? 'free')} />
-                <DetailRow
-                  label="Verified"
-                  verified={!!full?.is_verified}
-                  value={
-                    full?.is_verified && full.verified_at
-                      ? fmtDateTime(full.verified_at)
-                      : full?.is_verified
-                      ? 'Yes'
-                      : full != null
-                      ? 'Not verified'
-                      : '—'
-                  }
-                />
-                <DetailRow
-                  label="Registered"
-                  value={full?.lead_created_at ? fmtDateTime(full.lead_created_at) : '—'}
-                />
-                <DetailRow
-                  label="Source"
-                  value={full?.source ? capitalize(full.source.replace(/_/g, ' ')) : '—'}
-                />
-                <DetailRow
-                  label="Marketing"
-                  value={
-                    full?.consent_marketing == null
-                      ? '—'
-                      : full.consent_marketing
-                      ? 'Opted in'
-                      : 'Opted out'
-                  }
-                  isLast
-                />
-              </View>
+              {/* ── Learner: full contact section ── */}
+              {!isStaffUser ? (
+                <>
+                  <SectionLabel title="Contact" />
+                  <View style={styles.card}>
+                    <DetailRow label="First name" value={full?.first_name ?? '—'} />
+                    <DetailRow label="Last name"  value={full?.last_name  ?? '—'} />
+                    <DetailRow label="Email"      value={cachedUser?.email ?? '—'} />
+                    <DetailRow label="Phone"      value={full?.phone ?? '—'} />
+                    <DetailRow label="Plan"       value={capitalize(cachedUser?.plan_key ?? 'free')} />
+                    <DetailRow
+                      label="Verified"
+                      verified={!!full?.is_verified}
+                      value={
+                        full?.is_verified && full.verified_at
+                          ? fmtDateTime(full.verified_at)
+                          : full?.is_verified ? 'Yes'
+                          : full != null ? 'Not verified' : '—'
+                      }
+                    />
+                    <DetailRow
+                      label="Registered"
+                      value={full?.lead_created_at ? fmtDateTime(full.lead_created_at) : '—'}
+                    />
+                    <DetailRow
+                      label="Source"
+                      value={full?.source ? capitalize(full.source.replace(/_/g, ' ')) : '—'}
+                    />
+                    <DetailRow
+                      label="Marketing"
+                      value={full?.consent_marketing == null ? '—' : full.consent_marketing ? 'Opted in' : 'Opted out'}
+                      isLast
+                    />
+                  </View>
 
-              <SectionLabel title="Account" />
-              <View style={styles.card}>
-                <DetailRow label="Role"         value={cachedUser ? capitalize(cachedUser.role) : '—'} />
-                <DetailRow label="Joined"       value={cachedUser ? fmtDateTime(cachedUser.created_at) : '—'} />
-                <DetailRow label="Last updated" value={cachedUser ? fmtDateTime(cachedUser.updated_at) : '—'} isLast />
-              </View>
+                  <SectionLabel title="Account" />
+                  <View style={styles.card}>
+                    <DetailRow label="Role"         value={cachedUser ? capitalize(cachedUser.role) : '—'} />
+                    <DetailRow label="Joined"       value={cachedUser ? fmtDateTime(cachedUser.created_at) : '—'} />
+                    <DetailRow label="Last updated" value={cachedUser ? fmtDateTime(cachedUser.updated_at) : '—'} isLast />
+                  </View>
+                </>
+              ) : (
+                /* ── Staff: compact account section only ── */
+                <>
+                  <SectionLabel title="Account" />
+                  <View style={styles.card}>
+                    <DetailRow label="Email"        value={cachedUser?.email ?? '—'} />
+                    <DetailRow label="Role"         value={cachedUser ? capitalize(cachedUser.role) : '—'} />
+                    <DetailRow label="Plan"         value={capitalize(cachedUser?.plan_key ?? 'free')} />
+                    <DetailRow label="Joined"       value={cachedUser ? fmtDateTime(cachedUser.created_at) : '—'} />
+                    <DetailRow label="Last updated" value={cachedUser ? fmtDateTime(cachedUser.updated_at) : '—'} isLast />
+                  </View>
+                </>
+              )}
 
+              {/* Actions */}
               {canEditContact ? (
                 <View style={styles.detailActions}>
                   <TouchableOpacity
@@ -457,67 +419,43 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
                   >
                     <Text style={styles.actionBtnText}>Edit details</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteTouchable}
-                    onPress={handleDelete}
-                    disabled={deleteMutation.isPending}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.deleteText}>
-                      {deleteMutation.isPending ? 'Deleting…' : 'Delete user…'}
-                    </Text>
-                  </TouchableOpacity>
+                  {!isSelf ? (
+                    <TouchableOpacity
+                      style={styles.deleteTouchable}
+                      onPress={handleDelete}
+                      disabled={deleteMutation.isPending}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.deleteText}>
+                        {deleteMutation.isPending ? 'Deleting…' : 'Delete user…'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
             </>
           ) : (
+            /* ── Edit mode ── */
             <>
-              <SectionLabel title="Contact" />
-              <View style={styles.editCard}>
-                <EditField
-                  label="First name"
-                  value={editFirstName}
-                  onChangeText={setEditFirstName}
-                  autoCapitalize="words"
-                />
-                <EditField
-                  label="Last name"
-                  value={editLastName}
-                  onChangeText={setEditLastName}
-                  autoCapitalize="words"
-                />
-                <EditField
-                  label="Phone"
-                  value={editPhone}
-                  onChangeText={setEditPhone}
-                  keyboardType="phone-pad"
-                />
-                <EditField
-                  label="Email"
-                  value={editEmail}
-                  onChangeText={setEditEmail}
-                  keyboardType="email-address"
-                />
-              </View>
-
-              {canEditRole ? (
+              {isStaffUser ? (
                 <>
-                  <SectionLabel title="Account" />
+                  <SectionLabel title="Details" />
                   <View style={styles.editCard}>
-                    <View style={styles.editField}>
-                      <Text style={styles.editFieldLabel}>Role</Text>
-                      <TouchableOpacity
-                        style={styles.rolePicker}
-                        onPress={handleRolePicker}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.rolePickerText}>{capitalize(editRole)}</Text>
-                        <Ionicons name="chevron-expand" size={16} color="#6e6e73" />
-                      </TouchableOpacity>
-                    </View>
+                    <EditField label="Full name" value={editFullName} onChangeText={setEditFullName} autoCapitalize="words" />
+                    <EditField label="Email" value={editEmail} onChangeText={setEditEmail} keyboardType="email-address" />
                   </View>
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <SectionLabel title="Contact" />
+                  <View style={styles.editCard}>
+                    <EditField label="First name" value={editFirstName} onChangeText={setEditFirstName} autoCapitalize="words" />
+                    <EditField label="Last name"  value={editLastName}  onChangeText={setEditLastName}  autoCapitalize="words" />
+                    <EditField label="Phone"      value={editPhone}     onChangeText={setEditPhone}     keyboardType="phone-pad" />
+                    <EditField label="Email"      value={editEmail}     onChangeText={setEditEmail}     keyboardType="email-address" />
+                  </View>
+                </>
+              )}
 
               <View style={styles.detailActions}>
                 <TouchableOpacity
@@ -528,14 +466,9 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
                 >
                   {updateMutation.isPending
                     ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={styles.actionBtnPrimaryText}>Save changes</Text>
-                  }
+                    : <Text style={styles.actionBtnPrimaryText}>Save changes</Text>}
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.deleteTouchable}
-                  onPress={() => setMode('view')}
-                  activeOpacity={0.75}
-                >
+                <TouchableOpacity style={styles.deleteTouchable} onPress={() => setMode('view')} activeOpacity={0.75}>
                   <Text style={{ fontSize: 15, color: '#6e6e73' }}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -550,9 +483,8 @@ function UserDetailScreen({ user, canEditContact, canEditRole, onClose }: UserDe
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function UsersScreen() {
-  const { role: currentRole } = useAuth();
+  const { role: currentRole, user: currentUser } = useAuth();
   const canEditContact = currentRole === 'manager' || isAdmin(currentRole);
-  const canEditRole    = isAdmin(currentRole);
 
   const [activeTab,     setActiveTab]     = useState<UserTab>('learners');
   const [search,        setSearch]        = useState('');
@@ -567,9 +499,9 @@ export default function UsersScreen() {
   const tabCounts = useMemo(() => {
     const c: Record<UserTab, number> = { learners: 0, staff: 0, admin: 0 };
     for (const p of allProfiles) {
-      if      (p.role === 'learner')                          c.learners++;
-      else if (p.role === 'educator' || p.role === 'manager') c.staff++;
-      else if (p.role === 'admin')                            c.admin++;
+      if      (p.role === 'learner')                           c.learners++;
+      else if (p.role === 'educator' || p.role === 'manager')  c.staff++;
+      else if (p.role === 'admin')                             c.admin++;
     }
     return c;
   }, [allProfiles]);
@@ -593,11 +525,7 @@ export default function UsersScreen() {
           </Text>
         </View>
         {canEditContact ? (
-          <TouchableOpacity
-            style={styles.inviteBtn}
-            onPress={() => setInviteVisible(true)}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteVisible(true)} activeOpacity={0.8}>
             <Ionicons name="person-add-outline" size={16} color="#ffffff" />
             <Text style={styles.inviteBtnText}>Invite</Text>
           </TouchableOpacity>
@@ -635,9 +563,7 @@ export default function UsersScreen() {
               style={[styles.tab, active && styles.tabActive]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {tab.label}
-              </Text>
+              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
               <View style={[styles.tabBadge, active && styles.tabBadgeActive]}>
                 <Text style={[styles.tabBadgeText, active && styles.tabBadgeTextActive]}>
                   {tabCounts[tab.value]}
@@ -663,9 +589,7 @@ export default function UsersScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0071e3" />
-          }
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#0071e3" />}
           ListHeaderComponent={
             <Text style={styles.listCount}>
               {filtered.length} user{filtered.length !== 1 ? 's' : ''}
@@ -679,8 +603,8 @@ export default function UsersScreen() {
 
       <UserDetailScreen
         user={selectedUser}
+        currentUserId={currentUser?.id ?? null}
         canEditContact={canEditContact}
-        canEditRole={canEditRole}
         onClose={() => setSelectedUser(null)}
       />
 
@@ -694,7 +618,6 @@ export default function UsersScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#f5f5f7' },
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -707,233 +630,129 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#6e6e73', marginTop: 2 },
 
   inviteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#0071e3',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#0071e3', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
   },
   inviteBtnText: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
 
-  // Search
   searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d2d2d7',
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginBottom: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: '#ffffff', borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
   searchInput: { flex: 1, fontSize: 15, color: '#1d1d1f', marginLeft: 8 },
 
-  // Tabs
   tabBar: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 10,
-    backgroundColor: '#ebebed',
-    borderRadius: 12,
-    padding: 3,
+    flexDirection: 'row', marginHorizontal: 16, marginBottom: 10,
+    backgroundColor: '#ebebed', borderRadius: 12, padding: 3,
   },
   tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 7,
-    borderRadius: 10,
-    gap: 5,
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', paddingVertical: 7, borderRadius: 10, gap: 5,
   },
   tabActive: {
     backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 2, elevation: 2,
   },
-  tabLabel:          { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
-  tabLabelActive:    { color: '#1d1d1f', fontWeight: '600' },
-  tabBadge:          { backgroundColor: '#d2d2d7', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center' },
-  tabBadgeActive:    { backgroundColor: '#0071e3' },
-  tabBadgeText:      { fontSize: 11, fontWeight: '600', color: '#6e6e73' },
-  tabBadgeTextActive:{ color: '#ffffff' },
+  tabLabel:           { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
+  tabLabelActive:     { color: '#1d1d1f', fontWeight: '600' },
+  tabBadge:           { backgroundColor: '#d2d2d7', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center' },
+  tabBadgeActive:     { backgroundColor: '#0071e3' },
+  tabBadgeText:       { fontSize: 11, fontWeight: '600', color: '#6e6e73' },
+  tabBadgeTextActive: { color: '#ffffff' },
 
-  // List
   list:      { paddingHorizontal: 16, paddingBottom: 32 },
   listCount: { fontSize: 12, color: '#9a9aa5', marginBottom: 6, marginTop: 2 },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#d2d2d7',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7',
   },
   rowBody:  { flex: 1, marginLeft: 12 },
   rowName:  { fontSize: 15, fontWeight: '500', color: '#1d1d1f' },
   rowEmail: { fontSize: 13, color: '#6e6e73', marginTop: 1 },
 
-  // Detail screen
-  detailScreen: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#f5f5f7',
-  },
+  // ── Detail screen ──
+  detailScreen: { ...StyleSheet.absoluteFillObject, backgroundColor: '#f5f5f7' },
+
   detailNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingBottom: 10,
     backgroundColor: '#f5f5f7',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#d2d2d7',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7',
   },
-  detailNavBack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 72,
-    paddingLeft: 4,
-  },
+  detailNavBack:     { flexDirection: 'row', alignItems: 'center', width: 72, paddingLeft: 4 },
   detailNavBackText: { fontSize: 17, color: '#0071e3', marginLeft: 2 },
   detailNavTitle:    { flex: 1, fontSize: 17, fontWeight: '600', color: '#1d1d1f', textAlign: 'center' },
 
   detailIdentity: {
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 28,
-    paddingBottom: 24,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7',
+    backgroundColor: '#ffffff',
   },
-  detailName:  { fontSize: 22, fontWeight: '700', color: '#1d1d1f', marginTop: 12 },
-  detailEmail: { fontSize: 14, color: '#6e6e73', marginTop: 4 },
-  detailLoading: { paddingVertical: 40, alignItems: 'center' },
+  detailName:  { fontSize: 18, fontWeight: '700', color: '#1d1d1f' },
+  detailEmail: { fontSize: 13, color: '#6e6e73', marginTop: 2 },
 
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9a9aa5',
-    letterSpacing: 0.5,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 6,
+    fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.5,
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 5,
   },
 
   card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d2d2d7',
+    backgroundColor: '#ffffff', marginHorizontal: 16,
+    borderRadius: 12, overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
   detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 11,
   },
-  detailRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#d2d2d7',
-  },
-  detailLabel: { fontSize: 14, color: '#6e6e73', flexShrink: 0, marginRight: 8 },
-  detailValueWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'flex-end' },
-  detailValue: {
-    fontSize: 14,
-    color: '#1d1d1f',
-    fontWeight: '500',
-    textAlign: 'right',
-  },
+  detailRowBorder:  { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7' },
+  detailLabel:      { fontSize: 14, color: '#6e6e73', flexShrink: 0, marginRight: 8 },
+  detailValueWrap:  { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'flex-end' },
+  detailValue:      { fontSize: 14, color: '#1d1d1f', fontWeight: '500', textAlign: 'right' },
 
-  detailActions: { paddingHorizontal: 16, paddingTop: 20, gap: 2 },
+  detailActions: { paddingHorizontal: 16, paddingTop: 16, gap: 2 },
   actionBtn: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d2d2d7',
+    backgroundColor: '#ffffff', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
     marginBottom: 2,
   },
   actionBtnText:        { fontSize: 16, fontWeight: '500', color: '#1d1d1f' },
   actionBtnPrimary:     { backgroundColor: '#0071e3', borderColor: '#0071e3' },
   actionBtnPrimaryText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
-  deleteTouchable: { alignItems: 'center', paddingVertical: 14 },
+  deleteTouchable: { alignItems: 'center', paddingVertical: 12 },
   deleteText:      { fontSize: 15, color: '#b81c3a', fontWeight: '500' },
 
-  // Edit form
+  // ── Edit form ──
   editCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#d2d2d7',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    backgroundColor: '#ffffff', marginHorizontal: 16,
+    borderRadius: 12, overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+    paddingHorizontal: 16, paddingVertical: 4,
   },
-  editField: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f0f0f5' },
-  editFieldLabel: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.3, marginBottom: 4 },
-  editFieldInput: {
-    fontSize: 15,
-    color: '#1d1d1f',
-    paddingVertical: 0,
-  },
-  rolePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f5f5f7',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 4,
-  },
-  rolePickerText: { fontSize: 15, color: '#1d1d1f' },
+  editField:      { paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f0f0f5' },
+  editFieldLabel: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.3, marginBottom: 3 },
+  editFieldInput: { fontSize: 15, color: '#1d1d1f', paddingVertical: 0 },
 
-  // Invite modal
+  // ── Invite modal ──
   inviteBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
   },
-  inviteCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-  },
-  inviteCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  inviteTitle:    { fontSize: 18, fontWeight: '700', color: '#1d1d1f' },
-  inviteCloseBtn: {
-    width: 28, height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ebebed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inviteSubtitle: { fontSize: 14, color: '#6e6e73', marginBottom: 20, lineHeight: 20 },
-  inviteNote:     { fontSize: 13, color: '#6e6e73', marginTop: 4, marginBottom: 20 },
-  inviteSendBtn: {
-    backgroundColor: '#0071e3',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 4,
-  },
+  inviteCard:       { backgroundColor: '#ffffff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 400 },
+  inviteCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  inviteTitle:      { fontSize: 18, fontWeight: '700', color: '#1d1d1f' },
+  inviteCloseBtn:   { width: 28, height: 28, borderRadius: 14, backgroundColor: '#ebebed', alignItems: 'center', justifyContent: 'center' },
+  inviteSubtitle:   { fontSize: 14, color: '#6e6e73', marginBottom: 20, lineHeight: 20 },
+  inviteNote:       { fontSize: 13, color: '#6e6e73', marginTop: 4, marginBottom: 20 },
+  inviteSendBtn:    { backgroundColor: '#0071e3', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 4 },
   inviteSendText:   { fontSize: 16, fontWeight: '600', color: '#ffffff' },
   inviteCancelBtn:  { paddingVertical: 10, alignItems: 'center' },
   inviteCancelText: { fontSize: 15, color: '#6e6e73' },

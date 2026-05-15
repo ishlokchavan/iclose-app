@@ -18,6 +18,8 @@ export interface FullUserProfile {
   source: string | null;
   is_verified: boolean | null;
   verified_at: string | null;
+  lead_created_at: string | null;
+  consent_marketing: boolean | null;
 }
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {

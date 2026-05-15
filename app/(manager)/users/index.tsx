@@ -272,17 +272,14 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
             >
               {mode === 'view' ? (
                 <>
-                  {/* Contact — enriched with lead data */}
+                  {/* Contact — enriched from leads */}
                   <SectionHeader title="Contact" />
                   <View style={styles.card}>
                     <DetailRow label="First name" value={full?.first_name ?? '—'} />
-                    <DetailRow label="Last name" value={full?.last_name ?? '—'} />
-                    <DetailRow label="Email" value={user?.email ?? '—'} />
-                    <DetailRow label="Phone" value={full?.phone ?? '—'} />
-                    <DetailRow
-                      label="Plan"
-                      value={capitalize(user?.plan_key ?? 'free')}
-                    />
+                    <DetailRow label="Last name"  value={full?.last_name  ?? '—'} />
+                    <DetailRow label="Email"      value={user?.email      ?? '—'} />
+                    <DetailRow label="Phone"      value={full?.phone      ?? '—'} />
+                    <DetailRow label="Plan"       value={capitalize(user?.plan_key ?? 'free')} />
                     <DetailRow
                       label="Verified"
                       value={
@@ -290,12 +287,28 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
                           ? fmtDate(full.verified_at)
                           : full?.is_verified
                           ? 'Yes'
-                          : 'Not verified'
+                          : full != null
+                          ? 'Not verified'
+                          : '—'
                       }
+                    />
+                    <DetailRow
+                      label="Registered"
+                      value={full?.lead_created_at ? fmtDate(full.lead_created_at) : '—'}
                     />
                     <DetailRow
                       label="Source"
                       value={full?.source ? capitalize(full.source.replace(/_/g, ' ')) : '—'}
+                    />
+                    <DetailRow
+                      label="Marketing"
+                      value={
+                        full?.consent_marketing == null
+                          ? '—'
+                          : full.consent_marketing
+                          ? 'Opted in'
+                          : 'Opted out'
+                      }
                       isLast
                     />
                   </View>
@@ -303,19 +316,9 @@ function UserModal({ user, canEdit, onClose }: UserModalProps) {
                   {/* Account */}
                   <SectionHeader title="Account" />
                   <View style={styles.card}>
-                    <DetailRow
-                      label="Role"
-                      value={user ? capitalize(user.role) : '—'}
-                    />
-                    <DetailRow
-                      label="Joined"
-                      value={user ? fmtDate(user.created_at) : '—'}
-                    />
-                    <DetailRow
-                      label="Last updated"
-                      value={user ? fmtDate(user.updated_at) : '—'}
-                      isLast
-                    />
+                    <DetailRow label="Role"         value={user ? capitalize(user.role) : '—'} />
+                    <DetailRow label="Joined"       value={user ? fmtDate(user.created_at) : '—'} />
+                    <DetailRow label="Last updated" value={user ? fmtDate(user.updated_at) : '—'} isLast />
                   </View>
 
                   {/* Actions */}

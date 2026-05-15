@@ -2,8 +2,17 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Missing Supabase env vars.\n' +
+    'Create a .env file with:\n' +
+    '  EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co\n' +
+    '  EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key'
+  );
+}
 
 // SecureStore adapter for Supabase session persistence
 const ExpoSecureStoreAdapter = {

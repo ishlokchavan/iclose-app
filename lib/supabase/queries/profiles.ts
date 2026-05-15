@@ -83,3 +83,37 @@ export async function deleteProfile(userId: string): Promise<void> {
     .eq('id', userId);
   if (error) throw error;
 }
+
+export async function upsertUserLead(
+  profileId: string,
+  fields: { first_name: string; last_name: string; phone: string; email: string },
+): Promise<void> {
+  const { error } = await supabase.rpc('upsert_user_lead', {
+    p_profile_id: profileId,
+    p_first_name: fields.first_name,
+    p_last_name: fields.last_name,
+    p_phone: fields.phone,
+    p_email: fields.email,
+  });
+  if (error) throw error;
+}
+
+export async function inviteTeamMember(email: string, fullName: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(
+    `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/invite-user`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      },
+      body: JSON.stringify({ email, full_name: fullName }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as any).error ?? `Invite failed (${res.status})`);
+  }
+}

@@ -9,9 +9,43 @@ export interface Profile {
   full_name: string | null;
   email: string | null;
   avatar_url: string | null;
+  headline: string | null;
+  bio: string | null;
   role: UserRole;
+  plan_key: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface Lead {
+  id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  phone: string;
+  plan_key: string;
+  source: string | null;
+  is_verified: boolean;
+  verified_at: string | null;
+  created_at: string;
+}
+
+export type HireKind = 'intern' | 'specialist';
+
+export interface HireApplication {
+  id: string;
+  kind: HireKind;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  message: string | null;
+  status: string;
+  created_at: string;
+  // intern-only
+  instagram?: string | null;
+  resume_path?: string | null;
 }
 
 export interface Area {

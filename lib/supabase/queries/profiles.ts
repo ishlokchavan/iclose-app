@@ -15,9 +15,18 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data as Profile;
 }
 
+export async function fetchAllProfiles(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Profile[];
+}
+
 export async function updateProfile(
   userId: string,
-  updates: Partial<Pick<Profile, 'full_name' | 'avatar_url'>>,
+  updates: Partial<Pick<Profile, 'full_name' | 'avatar_url' | 'role' | 'headline' | 'bio'>>,
 ): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
@@ -29,15 +38,6 @@ export async function updateProfile(
   return data as Profile;
 }
 
-export async function fetchAllProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as Profile[];
-}
-
 export async function updateUserRole(
   userId: string,
   role: Profile['role'],
@@ -45,6 +45,14 @@ export async function updateUserRole(
   const { error } = await supabase
     .from('profiles')
     .update({ role, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function deleteProfile(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .delete()
     .eq('id', userId);
   if (error) throw error;
 }

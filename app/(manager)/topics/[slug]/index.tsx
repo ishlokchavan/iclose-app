@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchTopic, updateTopic, deleteTopic } from '../../../../lib/supabase/queries/topics';
 import { Spinner } from '../../../../components/ui/Spinner';
+import { VideoPlayer } from '../../../../components/ui/VideoPlayer';
 import type { TopicStatus } from '../../../../types/database';
 
 const STATUS_CFG: Record<string, { label: string; color: string }> = {
@@ -121,9 +122,14 @@ export default function ManagerTopicDetailScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
 
-        {/* Cover / thumbnail */}
-        {thumbnail ? (
-          <Image source={{ uri: thumbnail }} style={styles.cover} resizeMode="cover" />
+        {/* Video player — tap-to-play; shows thumbnail until tapped */}
+        {topic.youtube_id ? (
+          <VideoPlayer
+            videoId={topic.youtube_id}
+            thumbnailUrl={topic.cover_url ?? `https://img.youtube.com/vi/${topic.youtube_id}/maxresdefault.jpg`}
+          />
+        ) : topic.cover_url ? (
+          <Image source={{ uri: topic.cover_url }} style={styles.cover} resizeMode="cover" />
         ) : null}
 
         {/* Title block */}

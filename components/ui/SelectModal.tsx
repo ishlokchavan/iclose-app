@@ -5,9 +5,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   ScrollView,
+  KeyboardAvoidingView,
   StyleSheet,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -37,6 +40,7 @@ export function SelectModal({
 }: SelectModalProps) {
   const [visible, setVisible] = useState(false);
   const [query, setQuery] = useState('');
+  const { height: screenHeight } = useWindowDimensions();
 
   const selected = options.find((o) => o.value === value);
 
@@ -44,105 +48,107 @@ export function SelectModal({
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
 
+  const dismiss = () => { setVisible(false); setQuery(''); };
+
   const handleSelect = (val: string | null) => {
     onChange(val);
-    setVisible(false);
-    setQuery('');
+    dismiss();
   };
 
   return (
     <>
-      {/* Trigger button */}
-      <TouchableOpacity
-        onPress={() => setVisible(true)}
-        activeOpacity={0.7}
-        style={styles.trigger}
-      >
+      {/* Trigger */}
+      <TouchableOpacity onPress={() => setVisible(true)} activeOpacity={0.7} style={styles.trigger}>
         <Text style={[styles.triggerText, !selected && styles.triggerPlaceholder]} numberOfLines={1}>
           {selected ? selected.label : placeholder}
         </Text>
         <Ionicons name="chevron-down" size={16} color="#6e6e73" />
       </TouchableOpacity>
 
-      {/* Modal */}
+      {/* Sheet modal */}
       <Modal
         visible={visible}
         animationType="slide"
         transparent
-        onRequestClose={() => { setVisible(false); setQuery(''); }}
+        onRequestClose={dismiss}
+        statusBarTranslucent
       >
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={() => { setVisible(false); setQuery(''); }}
-        />
-        <View style={styles.sheet}>
-          {/* Handle */}
-          <View style={styles.handle} />
+        {/* Full-screen container */}
+        <View style={styles.root}>
+          {/* Tap-away backdrop */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
 
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>{title}</Text>
-            <TouchableOpacity
-              onPress={() => { setVisible(false); setQuery(''); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={22} color="#1d1d1f" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Search */}
-          {searchable ? (
-            <View style={styles.searchWrap}>
-              <Ionicons name="search" size={16} color="#9a9aa5" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search…"
-                placeholderTextColor="#9a9aa5"
-                value={query}
-                onChangeText={setQuery}
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-            </View>
-          ) : null}
-
-          {/* Options */}
-          <ScrollView
-            style={styles.list}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+          {/* KAV wraps only the sheet — pushes it up when keyboard appears */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.kav}
           >
-            {/* None option */}
-            <TouchableOpacity
-              style={styles.optionRow}
-              onPress={() => handleSelect(null)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.optionText, !value && styles.optionSelected]}>{noneLabel}</Text>
-              {!value ? <Ionicons name="checkmark" size={18} color="#0071e3" /> : null}
-            </TouchableOpacity>
+            <View style={[styles.sheet, { maxHeight: screenHeight * 0.82 }]}>
+              {/* Handle */}
+              <View style={styles.handle} />
 
-            {filtered.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.optionRow, styles.optionBorder]}
-                onPress={() => handleSelect(opt.value)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.optionText, value === opt.value && styles.optionSelected]} numberOfLines={1}>
-                  {opt.label}
-                </Text>
-                {value === opt.value ? <Ionicons name="checkmark" size={18} color="#0071e3" /> : null}
-              </TouchableOpacity>
-            ))}
-
-            {filtered.length === 0 ? (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No results for "{query}"</Text>
+              {/* Header */}
+              <View style={styles.header}>
+                <Text style={styles.headerTitle}>{title}</Text>
+                <TouchableOpacity onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close" size={22} color="#1d1d1f" />
+                </TouchableOpacity>
               </View>
-            ) : null}
-          </ScrollView>
+
+              {/* Search */}
+              {searchable ? (
+                <View style={styles.searchWrap}>
+                  <Ionicons name="search" size={16} color="#9a9aa5" style={styles.searchIcon} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search…"
+                    placeholderTextColor="#9a9aa5"
+                    value={query}
+                    onChangeText={setQuery}
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                    returnKeyType="search"
+                  />
+                </View>
+              ) : null}
+
+              {/* Options list — flex: 1 so it shrinks when KAV reduces space */}
+              <ScrollView
+                style={styles.list}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
+                <TouchableOpacity style={styles.optionRow} onPress={() => handleSelect(null)} activeOpacity={0.7}>
+                  <Text style={[styles.optionText, !value && styles.optionSelected]}>{noneLabel}</Text>
+                  {!value ? <Ionicons name="checkmark" size={18} color="#0071e3" /> : null}
+                </TouchableOpacity>
+
+                {filtered.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.optionRow, styles.optionBorder]}
+                    onPress={() => handleSelect(opt.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionText, value === opt.value && styles.optionSelected]} numberOfLines={1}>
+                      {opt.label}
+                    </Text>
+                    {value === opt.value ? <Ionicons name="checkmark" size={18} color="#0071e3" /> : null}
+                  </TouchableOpacity>
+                ))}
+
+                {filtered.length === 0 && query.length > 0 ? (
+                  <View style={styles.emptyWrap}>
+                    <Text style={styles.emptyText}>No results for "{query}"</Text>
+                  </View>
+                ) : null}
+
+                {/* Bottom spacing so last item clears safe area */}
+                <View style={{ height: Platform.OS === 'ios' ? 34 : 16 }} />
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
@@ -163,16 +169,19 @@ const styles = StyleSheet.create({
   triggerText:        { flex: 1, fontSize: 15, color: '#1d1d1f' },
   triggerPlaceholder: { color: '#9a9aa5' },
 
-  backdrop: {
+  root: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  kav: {
+    // KAV sits at the bottom; it will shrink upward when keyboard appears
   },
   sheet: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    maxHeight: '70%',
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    overflow: 'hidden',
   },
   handle: {
     alignSelf: 'center',
@@ -204,14 +213,14 @@ const styles = StyleSheet.create({
   searchIcon:  { marginRight: 6 },
   searchInput: { flex: 1, fontSize: 15, color: '#1d1d1f', paddingVertical: 9 },
 
-  list: { flexGrow: 0 },
+  list: { flex: 1 },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
-  optionBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
+  optionBorder:   { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f0f0f0' },
   optionText:     { flex: 1, fontSize: 15, color: '#1d1d1f' },
   optionSelected: { color: '#0071e3', fontWeight: '600' },
 

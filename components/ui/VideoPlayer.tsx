@@ -10,116 +10,29 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import YoutubeIframe, { PLAYER_STATES, YoutubeIframeRef } from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// ─── Safari UA ────────────────────────────────────────────────────────────
-// Disguise as Safari so YouTube serves the standard embed without WebView blocks.
-const SAFARI_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) ' +
-  'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+// YouTube playerVars: controls=0 suppresses the entire YouTube UI.
+// Combined with pointerEvents="none" on the WebView wrapper, users
+// can't trigger any of YouTube's hover/tap overlays either.
+const PLAYER_PARAMS = {
+  controls: false,
+  rel: false,
+  iv_load_policy: 3,
+  preventFullScreen: false,
+} as const;
 
-// ─── Injected JS ──────────────────────────────────────────────────────────
-// Runs inside youtube-nocookie.com/embed/ — same origin as the player DOM.
-// CSS selectors here directly target YouTube player elements (no cross-origin barrier).
-const INJECT_JS = `
-(function() {
-  var HIDE = [
-    '.ytp-watermark',
-    '.ytp-youtube-button',
-    '.ytp-pause-overlay-container',
-    '.ytp-pause-overlay',
-    '.ytp-watch-later-button',
-    '.ytp-share-button',
-    '.ytp-copylink-button',
-    '.ytp-cards-button',
-    '.ytp-endscreen-content',
-    '.ytp-title',
-    '.ytp-title-channel',
-    '.ytp-chrome-top',
-    '.branding-img',
-    '.ytp-logo',
-  ].join(',');
+const WEBVIEW_PROPS = {
+  allowsFullscreenVideo: false,
+  allowsInlineMediaPlayback: true,
+  mediaPlaybackRequiresUserAction: false,
+} as const;
 
-  // Inject a stylesheet — persists across dynamic DOM changes
-  var style = document.createElement('style');
-  style.textContent = HIDE + '{display:none!important;opacity:0!important;pointer-events:none!important}';
-  document.head.appendChild(style);
-
-  // Belt-and-suspenders: MutationObserver hides elements re-injected by YouTube
-  var obs = new MutationObserver(function() {
-    document.querySelectorAll(HIDE).forEach(function(el) {
-      el.style.cssText = 'display:none!important;opacity:0!important';
-    });
-  });
-  obs.observe(document.documentElement, { childList: true, subtree: true });
-
-  function post(d) { window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(d)); }
-
-  // Poll for #movie_player — YouTube's internal player object
-  var p = null;
-  var readySent = false;
-  var pollInit = setInterval(function() {
-    var el = document.querySelector('#movie_player');
-    if (el && typeof el.getCurrentTime === 'function') {
-      clearInterval(pollInit);
-      p = el;
-      if (!readySent) {
-        readySent = true;
-        post({ t: 'ready', dur: Math.floor(p.getDuration() || 0) });
-      }
-      // Report progress every 500 ms
-      setInterval(function() {
-        post({ t: 'tick', c: Math.floor(p.getCurrentTime()), d: Math.floor(p.getDuration() || 0) });
-      }, 500);
-      // State changes
-      p.addEventListener('onStateChange', function(state) {
-        post({ t: 'state', s: state });
-      });
-    }
-  }, 300);
-
-  // Commands from React Native
-  function onCmd(e) {
-    try {
-      var cmd = JSON.parse(typeof e === 'string' ? e : e.data);
-      if (!p) return;
-      if (cmd.t === 'play')  p.playVideo();
-      if (cmd.t === 'pause') p.pauseVideo();
-      if (cmd.t === 'seek')  p.seekTo(cmd.v, true);
-    } catch(x) {}
-  }
-  document.addEventListener('message', onCmd);
-  window.addEventListener('message', onCmd);
-})();
-true;
-`;
-
-// ─── URL builder ──────────────────────────────────────────────────────────
-function embedUrl(videoId: string, startSecs = 0) {
-  const p = new URLSearchParams({
-    controls:       '0',
-    rel:            '0',
-    showinfo:       '0',
-    iv_load_policy: '3',
-    playsinline:    '1',
-    autoplay:       '1',
-    modestbranding: '1',
-    start:          String(Math.floor(startSecs)),
-  });
-  return `https://www.youtube-nocookie.com/embed/${videoId}?${p.toString()}`;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────
 function fmt(s: number) {
   const t = Math.max(0, Math.floor(s));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
-}
-
-function injectCmd(ref: React.RefObject<WebView | null>, cmd: object) {
-  const js = `(function(){var e=new MessageEvent('message',{data:JSON.stringify(${JSON.stringify(cmd)})});window.dispatchEvent(e);})();true;`;
-  ref.current?.injectJavaScript(js);
 }
 
 // ─── Controls overlay ─────────────────────────────────────────────────────
@@ -132,16 +45,22 @@ interface ControlsProps {
   onTogglePlay: () => void;
   onSeek: (ratio: number) => void;
   onFullscreenToggle: () => void;
+  onTap: () => void;
   bottomPad?: number;
 }
 
-function Controls({ playing, buffering, currentTime, duration,
-  isFullscreen, onTogglePlay, onSeek, onFullscreenToggle, bottomPad = 0 }: ControlsProps) {
+function Controls({
+  playing, buffering, currentTime, duration,
+  isFullscreen, onTogglePlay, onSeek, onFullscreenToggle, onTap, bottomPad = 0,
+}: ControlsProps) {
   const [trackW, setTrackW] = useState(1);
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
 
   return (
-    <View style={styles.controlsOverlay} pointerEvents="box-none">
+    <View style={styles.controlsOverlay}>
+      {/* Tap-anywhere area to toggle controls visibility */}
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onTap} />
+
       <View style={styles.dimBottom} pointerEvents="none" />
 
       <TouchableOpacity style={styles.centerBtn} onPress={onTogglePlay} activeOpacity={0.75}>
@@ -171,32 +90,253 @@ function Controls({ playing, buffering, currentTime, duration,
   );
 }
 
-// ─── Shared WebView player ────────────────────────────────────────────────
-interface PlayerViewProps {
+// ─── Inline player ────────────────────────────────────────────────────────
+interface InlinePlayerProps {
   videoId: string;
-  startSecs?: number;
+  width: number;
   height: number;
-  onMessage: (e: any) => void;
-  wvRef: React.RefObject<WebView | null>;
+  startSecs?: number;
+  onEnterFullscreen: (currentTime: number) => void;
 }
 
-function PlayerView({ videoId, startSecs = 0, height, onMessage, wvRef }: PlayerViewProps) {
+function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen }: InlinePlayerProps) {
+  const [playing, setPlaying] = useState(true);
+  const [buffering, setBuffering] = useState(true);
+  const [currentTime, setCurrentTime] = useState(startSecs);
+  const [duration, setDuration] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+
+  const playerRef = useRef<YoutubeIframeRef>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const resetHide = useCallback(() => {
+    setShowControls(true);
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowControls(false), 3500);
+  }, []);
+
+  useEffect(() => {
+    if (playing) {
+      pollRef.current = setInterval(async () => {
+        const t = (await playerRef.current?.getCurrentTime()) ?? 0;
+        const d = (await playerRef.current?.getDuration()) ?? 0;
+        setCurrentTime(t);
+        if (d > 0) setDuration(d);
+      }, 500);
+    } else {
+      clearInterval(pollRef.current);
+    }
+    return () => clearInterval(pollRef.current);
+  }, [playing]);
+
+  useEffect(() => () => {
+    clearInterval(pollRef.current);
+    clearTimeout(hideTimerRef.current);
+  }, []);
+
+  const onReady = useCallback(() => {
+    setBuffering(false);
+    if (startSecs > 1) playerRef.current?.seekTo(startSecs, true);
+    resetHide();
+  }, [startSecs, resetHide]);
+
+  const togglePlay = useCallback(() => {
+    setPlaying((p) => {
+      const next = !p;
+      if (next) resetHide();
+      else { setShowControls(true); clearTimeout(hideTimerRef.current); }
+      return next;
+    });
+  }, [resetHide]);
+
+  const handleSeek = useCallback((ratio: number) => {
+    const t = ratio * duration;
+    setCurrentTime(t);
+    playerRef.current?.seekTo(t, true);
+    resetHide();
+  }, [duration, resetHide]);
+
+  const handleTap = useCallback(() => {
+    if (showControls) {
+      setShowControls(false);
+      clearTimeout(hideTimerRef.current);
+    } else {
+      resetHide();
+    }
+  }, [showControls, resetHide]);
+
   return (
-    <WebView
-      ref={wvRef}
-      source={{ uri: embedUrl(videoId, startSecs) }}
-      userAgent={SAFARI_UA}
-      injectedJavaScript={INJECT_JS}
-      onMessage={onMessage}
-      allowsFullscreenVideo={false}
-      allowsInlineMediaPlayback
-      mediaPlaybackRequiresUserAction={false}
-      javaScriptEnabled
-      originWhitelist={['*']}
-      scrollEnabled={false}
-      bounces={false}
-      style={[styles.webview, { height }]}
-    />
+    <View style={{ width, height, backgroundColor: '#000' }}>
+      {/* YouTube iframe wrapper — pointerEvents=none blocks all touches
+          so YouTube can't show its hover/tap overlays */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <YoutubeIframe
+          ref={playerRef}
+          videoId={videoId}
+          height={height}
+          width={width}
+          play={playing}
+          initialPlayerParams={PLAYER_PARAMS}
+          onChangeState={(s: PLAYER_STATES) => {
+            if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }
+            if (s === PLAYER_STATES.PAUSED)    setPlaying(false);
+            if (s === PLAYER_STATES.BUFFERING) setBuffering(true);
+            if (s === PLAYER_STATES.ENDED)     setPlaying(false);
+          }}
+          onReady={onReady}
+          webViewProps={WEBVIEW_PROPS}
+          forceAndroidAutoplay={Platform.OS === 'android'}
+        />
+      </View>
+
+      {/* Black overlay shown while loading / paused at start — hides any
+          brief YouTube branding flash before the player is ready */}
+      {buffering ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
+          <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
+        </View>
+      ) : null}
+
+      {showControls ? (
+        <Controls
+          playing={playing} buffering={buffering}
+          currentTime={currentTime} duration={duration}
+          isFullscreen={false}
+          onTogglePlay={togglePlay}
+          onSeek={handleSeek}
+          onFullscreenToggle={() => {
+            setPlaying(false);
+            onEnterFullscreen(currentTime);
+          }}
+          onTap={handleTap}
+        />
+      ) : (
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleTap} />
+      )}
+    </View>
+  );
+}
+
+// ─── Fullscreen player ────────────────────────────────────────────────────
+interface FsPlayerProps {
+  videoId: string;
+  startSecs: number;
+  onClose: (currentTime: number) => void;
+}
+
+function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
+  const [playing, setPlaying] = useState(true);
+  const [buffering, setBuffering] = useState(true);
+  const [currentTime, setCurrentTime] = useState(startSecs);
+  const [duration, setDuration] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+
+  const playerRef = useRef<YoutubeIframeRef>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  const resetHide = useCallback(() => {
+    setShowControls(true);
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowControls(false), 3500);
+  }, []);
+
+  useEffect(() => {
+    if (playing) {
+      pollRef.current = setInterval(async () => {
+        const t = (await playerRef.current?.getCurrentTime()) ?? 0;
+        const d = (await playerRef.current?.getDuration()) ?? 0;
+        setCurrentTime(t);
+        if (d > 0) setDuration(d);
+      }, 500);
+    } else {
+      clearInterval(pollRef.current);
+    }
+    return () => clearInterval(pollRef.current);
+  }, [playing]);
+
+  useEffect(() => () => {
+    clearInterval(pollRef.current);
+    clearTimeout(hideTimerRef.current);
+  }, []);
+
+  const onReady = useCallback(() => {
+    setBuffering(false);
+    if (startSecs > 1) playerRef.current?.seekTo(startSecs, true);
+    resetHide();
+  }, [startSecs, resetHide]);
+
+  const togglePlay = useCallback(() => {
+    setPlaying((p) => {
+      const next = !p;
+      if (next) resetHide();
+      else { setShowControls(true); clearTimeout(hideTimerRef.current); }
+      return next;
+    });
+  }, [resetHide]);
+
+  const handleSeek = useCallback((ratio: number) => {
+    const t = ratio * duration;
+    setCurrentTime(t);
+    playerRef.current?.seekTo(t, true);
+    resetHide();
+  }, [duration, resetHide]);
+
+  const handleTap = useCallback(() => {
+    if (showControls) {
+      setShowControls(false);
+      clearTimeout(hideTimerRef.current);
+    } else {
+      resetHide();
+    }
+  }, [showControls, resetHide]);
+
+  return (
+    <View style={styles.fsContainer}>
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <YoutubeIframe
+          ref={playerRef}
+          videoId={videoId}
+          height={height}
+          width={width}
+          play={playing}
+          initialPlayerParams={PLAYER_PARAMS}
+          onChangeState={(s: PLAYER_STATES) => {
+            if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }
+            if (s === PLAYER_STATES.PAUSED)    setPlaying(false);
+            if (s === PLAYER_STATES.BUFFERING) setBuffering(true);
+            if (s === PLAYER_STATES.ENDED)     setPlaying(false);
+          }}
+          onReady={onReady}
+          webViewProps={WEBVIEW_PROPS}
+          forceAndroidAutoplay={Platform.OS === 'android'}
+        />
+      </View>
+
+      {buffering ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
+          <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
+        </View>
+      ) : null}
+
+      {showControls ? (
+        <Controls
+          playing={playing} buffering={buffering}
+          currentTime={currentTime} duration={duration}
+          isFullscreen
+          onTogglePlay={togglePlay}
+          onSeek={handleSeek}
+          onFullscreenToggle={() => onClose(currentTime)}
+          onTap={handleTap}
+          bottomPad={insets.bottom}
+        />
+      ) : (
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleTap} />
+      )}
+    </View>
   );
 }
 
@@ -207,101 +347,20 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
-  const [launched, setLaunched]         = useState(false);
-  const [playing, setPlaying]           = useState(false);
-  const [buffering, setBuffering]       = useState(true);
-  const [currentTime, setCurrentTime]   = useState(0);
-  const [duration, setDuration]         = useState(0);
-  const [showControls, setShowControls] = useState(true);
-  const [fullscreen, setFullscreen]     = useState(false);
+  const [launched, setLaunched] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fsStartSecs, setFsStartSecs] = useState(0);
+  const [resumeSecs, setResumeSecs] = useState(0);
 
-  const mainRef  = useRef<WebView | null>(null);
-  const fsRef    = useRef<WebView | null>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  const { width, height: screenHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const playerH = Math.round(width * 9 / 16);
-
-  const resetHideTimer = useCallback(() => {
-    setShowControls(true);
-    clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setShowControls(false), 3500);
-  }, []);
-
-  useEffect(() => () => clearTimeout(hideTimer.current), []);
-
-  const handleMessage = useCallback((e: any) => {
-    try {
-      const msg = JSON.parse(e.nativeEvent.data);
-      if (msg.t === 'ready') {
-        setBuffering(false);
-        if (msg.dur > 0) setDuration(msg.dur);
-        resetHideTimer();
-      }
-      if (msg.t === 'state') {
-        // -1 unstarted | 0 ended | 1 playing | 2 paused | 3 buffering | 5 cued
-        if (msg.s === 1) { setPlaying(true);  setBuffering(false); resetHideTimer(); }
-        if (msg.s === 2) { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); }
-        if (msg.s === 3) { setBuffering(true); }
-        if (msg.s === 0) { setPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); }
-      }
-      if (msg.t === 'tick') {
-        setCurrentTime(msg.c ?? 0);
-        if ((msg.d ?? 0) > 0) setDuration(msg.d);
-      }
-    } catch {}
-  }, [resetHideTimer]);
-
-  const activeRef = useCallback(() => fullscreen ? fsRef : mainRef, [fullscreen]);
-
-  const togglePlay = useCallback(() => {
-    if (playing) {
-      injectCmd(activeRef(), { t: 'pause' });
-      setPlaying(false);
-      setShowControls(true);
-      clearTimeout(hideTimer.current);
-    } else {
-      injectCmd(activeRef(), { t: 'play' });
-      setPlaying(true);
-      resetHideTimer();
-    }
-  }, [playing, activeRef, resetHideTimer]);
-
-  const handleSeek = useCallback((ratio: number) => {
-    const t = Math.max(0, Math.min(duration, ratio * duration));
-    setCurrentTime(t);
-    injectCmd(activeRef(), { t: 'seek', v: t });
-    resetHideTimer();
-  }, [duration, activeRef, resetHideTimer]);
-
-  const enterFullscreen = useCallback(() => {
-    injectCmd(mainRef, { t: 'pause' });
-    setPlaying(false);
-    setBuffering(true);
-    setFullscreen(true);
-    resetHideTimer();
-  }, [resetHideTimer]);
-
-  const exitFullscreen = useCallback(() => {
-    injectCmd(fsRef, { t: 'pause' });
-    setFullscreen(false);
-    setTimeout(() => {
-      injectCmd(mainRef, { t: 'seek', v: currentTime });
-      injectCmd(mainRef, { t: 'play' });
-      setPlaying(true);
-      resetHideTimer();
-    }, 150);
-  }, [currentTime, resetHideTimer]);
-
   const thumb = thumbnailUrl ?? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 
-  // ── Thumbnail ────────────────────────────────────────────────────────────
   if (!launched) {
     return (
       <TouchableOpacity
         style={[styles.thumbnail, { height: playerH }]}
-        onPress={() => { setLaunched(true); setBuffering(true); }}
+        onPress={() => setLaunched(true)}
         activeOpacity={0.9}
       >
         <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -313,61 +372,40 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
     );
   }
 
-  // ── Inline player ─────────────────────────────────────────────────────────
   return (
     <>
-      <TouchableOpacity
-        activeOpacity={1}
-        style={[styles.playerWrap, { height: playerH }]}
-        onPress={resetHideTimer}
-      >
-        <PlayerView
+      {/* When fullscreen is active, the inline player is unmounted to free the
+          single YouTube WebView instance — we remount it with resumeSecs on exit */}
+      {!fullscreen ? (
+        <InlinePlayer
+          key={`inline-${resumeSecs}`}
           videoId={videoId}
+          width={width}
           height={playerH}
-          onMessage={handleMessage}
-          wvRef={mainRef}
+          startSecs={resumeSecs}
+          onEnterFullscreen={(t) => {
+            setFsStartSecs(t);
+            setFullscreen(true);
+          }}
         />
-        {showControls ? (
-          <Controls
-            playing={playing} buffering={buffering}
-            currentTime={currentTime} duration={duration}
-            isFullscreen={false}
-            onTogglePlay={togglePlay}
-            onSeek={handleSeek}
-            onFullscreenToggle={enterFullscreen}
-          />
-        ) : null}
-      </TouchableOpacity>
+      ) : (
+        <View style={[styles.thumbnail, { height: playerH }]} />
+      )}
 
-      {/* ── Fullscreen modal ─────────────────────────────────────────────── */}
       <Modal
         visible={fullscreen}
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={exitFullscreen}
+        onRequestClose={() => setFullscreen(false)}
       >
-        <View style={styles.fsContainer}>
-          <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={resetHideTimer}>
-            <PlayerView
-              videoId={videoId}
-              startSecs={currentTime}
-              height={screenHeight}
-              onMessage={handleMessage}
-              wvRef={fsRef}
-            />
-          </TouchableOpacity>
-          {showControls ? (
-            <Controls
-              playing={playing} buffering={buffering}
-              currentTime={currentTime} duration={duration}
-              isFullscreen
-              onTogglePlay={togglePlay}
-              onSeek={handleSeek}
-              onFullscreenToggle={exitFullscreen}
-              bottomPad={insets.bottom}
-            />
-          ) : null}
-        </View>
+        <FsPlayer
+          videoId={videoId}
+          startSecs={fsStartSecs}
+          onClose={(t) => {
+            setResumeSecs(t);
+            setFullscreen(false);
+          }}
+        />
       </Modal>
     </>
   );
@@ -388,9 +426,6 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
 
-  playerWrap: { width: '100%', backgroundColor: '#000', overflow: 'hidden' },
-  webview:    { backgroundColor: '#000' },
-
   controlsOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
   dimBottom: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 90,
@@ -405,11 +440,11 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8,
   },
-  timeText: { fontSize: 12, color: '#fff', fontWeight: '500', minWidth: 36, textAlign: 'center' },
+  timeText:  { fontSize: 12, color: '#fff', fontWeight: '500', minWidth: 36, textAlign: 'center' },
   seekTrack: { flex: 1, height: 20, justifyContent: 'center' },
   trackBg:   { height: 3, backgroundColor: 'rgba(255,255,255,0.35)', borderRadius: 2 },
   trackFill: { height: 3, backgroundColor: '#fff', borderRadius: 2, position: 'absolute', left: 0 },
-  trackDot:  {
+  trackDot: {
     position: 'absolute', top: '50%', width: 12, height: 12,
     borderRadius: 6, backgroundColor: '#fff', marginTop: -6, marginLeft: -6,
   },

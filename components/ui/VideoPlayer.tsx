@@ -24,6 +24,10 @@ const PLAYER_PARAMS = {
   preventFullScreen: false,
 } as const;
 
+// Use local HTML so controls:0 is injected directly into the YT.Player call,
+// and set the baseUrl to lonelycpp.github.io so YouTube accepts the embed origin.
+const BASE_URL = 'https://lonelycpp.github.io/react-native-youtube-iframe/';
+
 const WEBVIEW_PROPS = {
   allowsFullscreenVideo: false,
   allowsInlineMediaPlayback: true,
@@ -138,6 +142,7 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
   const onReady = useCallback(() => {
     setBuffering(false);
     if (startSecs > 1) playerRef.current?.seekTo(startSecs, true);
+    setPlaying(true);
     resetHide();
   }, [startSecs, resetHide]);
 
@@ -177,6 +182,8 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
           height={height}
           width={width}
           play={playing}
+          useLocalHTML
+          baseUrlOverride={BASE_URL}
           initialPlayerParams={PLAYER_PARAMS}
           onChangeState={(s: PLAYER_STATES) => {
             if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }
@@ -190,8 +197,8 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
         />
       </View>
 
-      {/* Black overlay shown while loading / paused at start — hides any
-          brief YouTube branding flash before the player is ready */}
+      {/* Black overlay shown while loading — hides any YouTube branding flash
+          before the player is ready and playing */}
       {buffering ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
           <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
@@ -303,6 +310,8 @@ function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
           height={height}
           width={width}
           play={playing}
+          useLocalHTML
+          baseUrlOverride={BASE_URL}
           initialPlayerParams={PLAYER_PARAMS}
           onChangeState={(s: PLAYER_STATES) => {
             if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }

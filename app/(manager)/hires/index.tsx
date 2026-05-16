@@ -97,6 +97,25 @@ function initials(first: string, last: string) {
   return ((first?.[0] ?? '') + (last?.[0] ?? '')).toUpperCase() || '?';
 }
 
+function instagramUrl(value: string): string {
+  if (value.startsWith('http')) return value;
+  const handle = value.replace(/^@/, '');
+  return `https://www.instagram.com/${handle}/`;
+}
+
+function instagramHandle(value: string): string {
+  if (!value.startsWith('http')) return value.startsWith('@') ? value : `@${value}`;
+  try {
+    const path = new URL(value).pathname.replace(/\/$/, '');
+    const handle = path.split('/').filter(Boolean).pop() ?? value;
+    return `@${handle}`;
+  } catch { return value; }
+}
+
+function isUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
 // ─── Period picker ────────────────────────────────────────────────────────────
 
 function PeriodPicker({ value, onChange }: { value: Period; onChange: (v: Period) => void }) {
@@ -276,6 +295,7 @@ function HireDetailScreen({
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -285,7 +305,13 @@ function HireDetailScreen({
       translateX.setValue(SCREEN_W);
       Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
       if (item.resume_path) {
-        getResumeSignedUrl(item.resume_path).then(setResumeUrl);
+        setResumeLoading(true);
+        getResumeSignedUrl(item.resume_path).then((url) => {
+          setResumeUrl(url);
+          setResumeLoading(false);
+        });
+      } else {
+        setResumeLoading(false);
       }
     }
   }, [item?.id]);
@@ -413,7 +439,7 @@ function HireDetailScreen({
               ) : null}
               {cached?.email ? (
                 <TouchableOpacity
-                  style={styles.detailRow}
+                  style={[styles.detailRow, cached?.instagram ? styles.detailRowBorder : undefined]}
                   onPress={() => Linking.openURL(`mailto:${cached.email}`)}
                   activeOpacity={0.7}
                 >
@@ -421,6 +447,20 @@ function HireDetailScreen({
                   <View style={styles.linkRow}>
                     <Ionicons name="mail-outline" size={14} color="#0071e3" />
                     <Text style={styles.linkText}>{cached.email}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {cached?.instagram ? (
+                <TouchableOpacity
+                  style={styles.detailRow}
+                  onPress={() => Linking.openURL(instagramUrl(cached.instagram!))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailLabel}>Instagram</Text>
+                  <View style={styles.linkRow}>
+                    <Ionicons name="logo-instagram" size={14} color="#0071e3" />
+                    <Text style={styles.linkText}>{instagramHandle(cached.instagram)}</Text>
+                    <Ionicons name="open-outline" size={12} color="#0071e3" />
                   </View>
                 </TouchableOpacity>
               ) : null}
@@ -432,7 +472,9 @@ function HireDetailScreen({
               {cached?.resume_path ? (
                 <View style={[styles.detailRow, cached?.message ? styles.detailRowBorder : undefined]}>
                   <Text style={styles.detailLabel}>Resume</Text>
-                  {resumeUrl ? (
+                  {resumeLoading ? (
+                    <ActivityIndicator size="small" color="#0071e3" />
+                  ) : resumeUrl ? (
                     <TouchableOpacity
                       style={styles.pdfBtn}
                       onPress={() => Linking.openURL(resumeUrl!)}
@@ -443,7 +485,7 @@ function HireDetailScreen({
                       <Ionicons name="open-outline" size={12} color="#0071e3" />
                     </TouchableOpacity>
                   ) : (
-                    <Text style={styles.detailValue}>Loading…</Text>
+                    <Text style={[styles.detailValue, { color: '#9a9aa5' }]}>Unavailable</Text>
                   )}
                 </View>
               ) : null}
@@ -525,12 +567,28 @@ function HireDetailScreen({
                 <Text style={styles.detailLabel}>Applied</Text>
                 <Text style={styles.detailValue}>{cached ? fmtDateTime(cached.created_at) : '—'}</Text>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Source</Text>
-                <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
-                  {cached?.referer ?? '—'}
-                </Text>
-              </View>
+              {cached?.referer && isUrl(cached.referer) ? (
+                <TouchableOpacity
+                  style={styles.detailRow}
+                  onPress={() => Linking.openURL(cached.referer!)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailLabel}>Source</Text>
+                  <View style={[styles.linkRow, { flex: 1, justifyContent: 'flex-end', flexWrap: 'wrap' }]}>
+                    <Ionicons name="link-outline" size={14} color="#0071e3" />
+                    <Text style={[styles.linkText, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                      {cached.referer}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Source</Text>
+                  <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                    {cached?.referer ?? '—'}
+                  </Text>
+                </View>
+              )}
             </View>
           </ScrollView>
         </KeyboardAvoidingView>

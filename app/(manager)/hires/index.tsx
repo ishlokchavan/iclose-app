@@ -315,7 +315,7 @@ function HireDetailScreen({
 
   const statusMutation = useMutation({
     mutationFn: async ({ status, remark }: { status: string; remark?: string }) => {
-      await updateHireStatus(cached!.id, cached!.kind, status);
+      await updateHireStatus(cached!.id, status);
       if (remark) {
         await addHireRemark(
           cached!.id, remark,
@@ -391,9 +391,7 @@ function HireDetailScreen({
                 ) : null}
               </View>
               <View style={styles.kindTag}>
-                <Text style={styles.kindTagText}>
-                  {cached?.kind === 'intern' ? 'Intern' : 'Specialist'}
-                </Text>
+                <Text style={styles.kindTagText}>Intern</Text>
               </View>
             </View>
 
@@ -431,8 +429,8 @@ function HireDetailScreen({
             {/* Application */}
             <Text style={styles.sectionLabel}>APPLICATION</Text>
             <View style={styles.card}>
-              {cached?.kind === 'intern' && (
-                <View style={[styles.detailRow, styles.detailRowBorder]}>
+              {cached?.resume_path ? (
+                <View style={[styles.detailRow, cached?.message ? styles.detailRowBorder : undefined]}>
                   <Text style={styles.detailLabel}>Resume</Text>
                   {resumeUrl ? (
                     <TouchableOpacity
@@ -445,21 +443,14 @@ function HireDetailScreen({
                       <Ionicons name="open-outline" size={12} color="#0071e3" />
                     </TouchableOpacity>
                   ) : (
-                    <Text style={styles.detailValue}>
-                      {cached?.resume_path ? 'Loading…' : '—'}
-                    </Text>
+                    <Text style={styles.detailValue}>Loading…</Text>
                   )}
                 </View>
-              )}
+              ) : null}
               {cached?.message ? (
                 <View style={styles.coverNoteWrap}>
                   <Text style={styles.coverNoteLabel}>Cover note</Text>
                   <Text style={styles.coverNoteText}>{cached.message}</Text>
-                </View>
-              ) : null}
-              {!cached?.message && !(cached?.kind === 'intern') ? (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailValue}>No message provided.</Text>
                 </View>
               ) : null}
             </View>

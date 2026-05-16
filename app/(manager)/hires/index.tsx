@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -275,6 +276,63 @@ function RejectRemarkModal({
   );
 }
 
+// ─── PDF viewer screen ────────────────────────────────────────────────────────
+
+function PdfViewerScreen({ url, onClose }: { url: string | null; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+  const translateX = useRef(new Animated.Value(SCREEN_W)).current;
+  const [webLoading, setWebLoading] = useState(true);
+
+  useEffect(() => {
+    if (url) {
+      setWebLoading(true);
+      translateX.setValue(SCREEN_W);
+      Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+    }
+  }, [url]);
+
+  const handleClose = () => {
+    Animated.timing(translateX, { toValue: SCREEN_W, duration: 220, useNativeDriver: true })
+      .start(() => onClose());
+  };
+
+  const viewerUri = url
+    ? `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`
+    : '';
+
+  return (
+    <Modal visible={!!url} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
+      <Animated.View style={[styles.detailScreen, { transform: [{ translateX }] }]}>
+        <View style={[styles.detailNav, { paddingTop: insets.top + 6 }]}>
+          <TouchableOpacity style={styles.detailNavBack} onPress={handleClose} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#0071e3" />
+            <Text style={styles.detailNavBackText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailNavTitle} numberOfLines={1}>Resume</Text>
+          <View style={{ width: 72 }} />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          {webLoading ? (
+            <View style={styles.pdfLoading}>
+              <ActivityIndicator size="large" color="#0071e3" />
+              <Text style={styles.pdfLoadingText}>Loading PDF…</Text>
+            </View>
+          ) : null}
+          <WebView
+            source={{ uri: viewerUri }}
+            style={[styles.pdfWebView, webLoading && { opacity: 0 }]}
+            onLoadEnd={() => setWebLoading(false)}
+            onError={() => setWebLoading(false)}
+            startInLoadingState={false}
+            scalesPageToFit
+          />
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 // ─── Detail screen ────────────────────────────────────────────────────────────
 
 function HireDetailScreen({
@@ -296,6 +354,7 @@ function HireDetailScreen({
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
   const [resumeLoading, setResumeLoading] = useState(false);
+  const [pdfViewerUrl, setPdfViewerUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (item) {
@@ -477,7 +536,7 @@ function HireDetailScreen({
                   ) : resumeUrl ? (
                     <TouchableOpacity
                       style={styles.pdfBtn}
-                      onPress={() => Linking.openURL(resumeUrl!)}
+                      onPress={() => setPdfViewerUrl(resumeUrl)}
                       activeOpacity={0.7}
                     >
                       <Ionicons name="document-outline" size={14} color="#0071e3" />
@@ -605,6 +664,7 @@ function HireDetailScreen({
         onConfirm={handleRejectConfirm}
         onClose={() => { setRejectModalVisible(false); setPendingStatus(null); }}
       />
+      <PdfViewerScreen url={pdfViewerUrl} onClose={() => setPdfViewerUrl(null)} />
     </Modal>
   );
 }
@@ -938,6 +998,10 @@ const styles = StyleSheet.create({
   remarkAuthor:     { fontSize: 13, fontWeight: '600', color: '#1d1d1f' },
   remarkTime:       { fontSize: 12, color: '#9a9aa5' },
   remarkContent:    { fontSize: 14, color: '#3d3d42', lineHeight: 20 },
+
+  pdfWebView:      { flex: 1 },
+  pdfLoading:      { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f7' },
+  pdfLoadingText:  { fontSize: 14, color: '#6e6e73', marginTop: 12 },
 
   rejectNote:       { fontSize: 14, color: '#6e6e73', marginBottom: 14, lineHeight: 20 },
   rejectInput:      {

@@ -13,6 +13,7 @@ import {
 import YoutubeIframe, { PLAYER_STATES, YoutubeIframeRef } from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 // YouTube playerVars: controls=0 suppresses the entire YouTube UI.
 // Combined with pointerEvents="none" on the WebView wrapper, users
@@ -363,6 +364,18 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
 
   const { width } = useWindowDimensions();
   const playerH = Math.round(width * 9 / 16);
+
+  // Rotate to landscape while fullscreen is active; restore portrait on exit.
+  useEffect(() => {
+    if (fullscreen) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    }
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    };
+  }, [fullscreen]);
   const thumb = thumbnailUrl ?? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 
   if (!launched) {

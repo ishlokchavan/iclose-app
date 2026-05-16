@@ -1,6 +1,13 @@
 import { supabase } from '../client';
 import type { Topic } from '../../../types/database';
 
+const TOPIC_SELECT = `
+  *,
+  area:areas(*),
+  property_type:property_types(*),
+  educator:educators!educator_record_id(*)
+`;
+
 export async function fetchTopics(filters?: {
   area?: string;
   type?: string;
@@ -9,26 +16,13 @@ export async function fetchTopics(filters?: {
 }): Promise<Topic[]> {
   let query = supabase
     .from('topics')
-    .select(`
-      *,
-      area:areas(*),
-      property_type:property_types(*),
-      educator:educators(*)
-    `)
+    .select(TOPIC_SELECT)
     .order('created_at', { ascending: false });
 
   if (filters?.status) {
     query = query.eq('status', filters.status);
   } else {
     query = query.eq('status', 'published');
-  }
-
-  if (filters?.area) {
-    query = query.eq('areas.slug', filters.area);
-  }
-
-  if (filters?.type) {
-    query = query.eq('property_types.slug', filters.type);
   }
 
   if (filters?.search) {
@@ -43,12 +37,7 @@ export async function fetchTopics(filters?: {
 export async function fetchTopic(slug: string): Promise<Topic | null> {
   const { data, error } = await supabase
     .from('topics')
-    .select(`
-      *,
-      area:areas(*),
-      property_type:property_types(*),
-      educator:educators(*)
-    `)
+    .select(TOPIC_SELECT)
     .eq('slug', slug)
     .single();
 
@@ -62,15 +51,7 @@ export async function fetchTopic(slug: string): Promise<Topic | null> {
 export async function fetchSavedTopics(userId: string): Promise<Topic[]> {
   const { data, error } = await supabase
     .from('saved_topics')
-    .select(`
-      *,
-      topic:topics(
-        *,
-        area:areas(*),
-        property_type:property_types(*),
-        educator:educators(*)
-      )
-    `)
+    .select(`*, topic:topics(${TOPIC_SELECT})`)
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
@@ -135,12 +116,7 @@ export async function deleteTopic(id: string): Promise<void> {
 export async function fetchAllTopics(filters?: { status?: string }): Promise<Topic[]> {
   let query = supabase
     .from('topics')
-    .select(`
-      *,
-      area:areas(*),
-      property_type:property_types(*),
-      educator:educators(*)
-    `)
+    .select(TOPIC_SELECT)
     .order('created_at', { ascending: false });
 
   if (filters?.status) {

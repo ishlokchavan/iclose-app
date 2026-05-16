@@ -90,7 +90,7 @@ export default function ManagerLayout() {
           }}
         />
         <Tabs.Screen
-          name="topics/index"
+          name="topics"
           options={{
             title: 'Topics',
             tabBarIcon: ({ color, size }) => (
@@ -129,9 +129,6 @@ export default function ManagerLayout() {
         <Tabs.Screen name="hires/index" options={{ href: null }} />
         <Tabs.Screen name="settings/index" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ href: null }} />
-        <Tabs.Screen name="topics/new" options={{ href: null }} />
-        <Tabs.Screen name="topics/[slug]/index" options={{ href: null }} />
-        <Tabs.Screen name="topics/[slug]/edit" options={{ href: null }} />
       </Tabs>
 
       <Modal

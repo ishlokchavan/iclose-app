@@ -106,11 +106,12 @@ export interface Topic {
   slug: string;
   description: string | null;
   youtube_id: string | null;
-  cover_image_url: string | null;
+  cover_url: string | null;
   status: TopicStatus;
   area_id: string | null;
+  subarea: string | null;
   type_id: string | null;
-  educator_id: string | null;
+  educator_record_id: string | null;
   resources: Resource[] | null;
   created_at: string;
   updated_at: string;

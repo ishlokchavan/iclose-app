@@ -94,7 +94,7 @@ function PeriodPicker({ value, onChange }: { value: Period; onChange: (v: Period
 
 function TopicCard({ topic, onPress }: { topic: Topic; onPress: () => void }) {
   const cfg = STATUS_CFG[topic.status] ?? { label: topic.status.toUpperCase(), color: '#9a9aa5' };
-  const thumbnail = topic.cover_image_url ??
+  const thumbnail = topic.cover_url ??
     (topic.youtube_id ? `https://img.youtube.com/vi/${topic.youtube_id}/mqdefault.jpg` : null);
   const educator = educatorDisplay(topic);
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
@@ -32,6 +33,10 @@ const STATUS_CFG: Record<string, { label: string; color: string }> = {
   archived:  { label: 'ARCHIVED',  color: '#6e6e73' },
 };
 
+function toSlug(title: string) {
+  return title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
 const schema = z.object({
   title:       z.string().min(3, 'Title must be at least 3 characters'),
   youtube_id:  z.string().min(5, 'Enter a valid YouTube video ID'),
@@ -47,6 +52,7 @@ export default function EditTopicScreen() {
   const insets = useSafeAreaInsets();
 
   const [selectedAreaId, setSelectedAreaId]         = useState<string | null>(null);
+  const [subarea, setSubarea]                       = useState('');
   const [selectedTypeId, setSelectedTypeId]         = useState<string | null>(null);
   const [selectedSubtypeIds, setSelectedSubtypeIds] = useState<string[]>([]);
   const [selectedEducatorId, setSelectedEducatorId] = useState<string | null>(null);
@@ -60,8 +66,8 @@ export default function EditTopicScreen() {
 
   const { data: areas = [] }    = useQuery({ queryKey: ['areas'], queryFn: fetchAreas });
   const { data: types = [] }    = useQuery({
-    queryKey: ['types', selectedAreaId],
-    queryFn: () => fetchTypes(selectedAreaId ?? undefined),
+    queryKey: ['types'],
+    queryFn: () => fetchTypes(),
   });
   const { data: subtypes = [] } = useQuery({
     queryKey: ['subtypes', selectedTypeId],
@@ -70,10 +76,12 @@ export default function EditTopicScreen() {
   });
   const { data: educators = [] } = useQuery({ queryKey: ['educators'], queryFn: fetchEducators });
 
-  const { control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { control, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { title: '', youtube_id: '', description: '' },
   });
+
+  const titleValue = watch('title');
 
   // Seed form and picker state once topic loads
   useEffect(() => {
@@ -84,8 +92,9 @@ export default function EditTopicScreen() {
       description: topic.description ?? '',
     });
     if (topic.area_id) setSelectedAreaId(topic.area_id);
+    if (topic.subarea) setSubarea(topic.subarea);
     if (topic.type_id) setSelectedTypeId(topic.type_id);
-    if (topic.educator_id) setSelectedEducatorId(topic.educator_id);
+    if (topic.educator_record_id) setSelectedEducatorId(topic.educator_record_id);
   }, [topic, reset]);
 
   // When type changes, clear subtypes
@@ -102,12 +111,13 @@ export default function EditTopicScreen() {
   const updateMutation = useMutation({
     mutationFn: (data: FormData) =>
       updateTopic(topic!.id, {
-        title:        data.title,
-        youtube_id:   data.youtube_id,
-        description:  data.description || null,
-        area_id:      selectedAreaId,
-        type_id:      selectedTypeId,
-        educator_id:  selectedEducatorId,
+        title:               data.title,
+        youtube_id:          data.youtube_id,
+        description:         data.description || null,
+        area_id:             selectedAreaId,
+        subarea:             subarea.trim() || null,
+        type_id:             selectedTypeId,
+        educator_record_id:  selectedEducatorId,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['topic', slug] });
@@ -262,6 +272,13 @@ export default function EditTopicScreen() {
                   error={errors.title?.message} />
               )}
             />
+
+            <View style={styles.slugPreview}>
+              <Text style={styles.slugLabel}>URL slug</Text>
+              <Text style={styles.slugValue}>/topics/{toSlug(titleValue) || '…'}</Text>
+              <Text style={styles.slugHint}>Auto-generated from title.</Text>
+            </View>
+
             <Controller control={control} name="youtube_id"
               render={({ field: { onChange, onBlur, value } }) => (
                 <Input label="YouTube Video ID" autoCapitalize="none" autoCorrect={false}
@@ -317,6 +334,18 @@ export default function EditTopicScreen() {
             {selectedAreaLabel ? (
               <Text style={styles.selectionHint}>{selectedAreaLabel} selected</Text>
             ) : null}
+
+            {/* Cluster / Building */}
+            <View style={styles.pickerSection}>
+              <Text style={styles.pickerLabel}>Cluster / Building (optional)</Text>
+              <TextInput
+                style={styles.textField}
+                value={subarea}
+                onChangeText={setSubarea}
+                placeholder="e.g. Burj Khalifa"
+                placeholderTextColor="#9a9aa5"
+              />
+            </View>
 
             {/* Property Type */}
             {typeOptions.length > 0 ? (
@@ -406,9 +435,19 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.5, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 5 },
   formCard:     { backgroundColor: '#ffffff', marginHorizontal: 16, borderRadius: 12, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },
 
+  slugPreview: { marginBottom: 8, paddingHorizontal: 4 },
+  slugLabel:   { fontSize: 12, fontWeight: '500', color: '#6e6e73', marginBottom: 2 },
+  slugValue:   { fontSize: 13, color: '#1d1d1f', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  slugHint:    { fontSize: 11, color: '#9a9aa5', marginTop: 2 },
+
   pickerLabel:   { fontSize: 13, fontWeight: '500', color: '#6e6e73', marginBottom: 6 },
   pickerSection: { marginTop: 14, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7' },
   selectionHint: { fontSize: 12, color: '#0071e3', marginTop: 5, marginLeft: 2 },
+  textField: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#1d1d1f', backgroundColor: '#f5f5f7',
+  },
 
   chipsWrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   chip:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f7', borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },

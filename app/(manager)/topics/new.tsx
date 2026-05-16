@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
@@ -40,17 +41,18 @@ export default function NewTopicScreen() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
-  const [selectedAreaId, setSelectedAreaId]     = useState<string | null>(null);
-  const [selectedTypeId, setSelectedTypeId]     = useState<string | null>(null);
+  const [selectedAreaId, setSelectedAreaId]         = useState<string | null>(null);
+  const [subarea, setSubarea]                       = useState('');
+  const [selectedTypeId, setSelectedTypeId]         = useState<string | null>(null);
   const [selectedSubtypeIds, setSelectedSubtypeIds] = useState<string[]>([]);
   const [selectedEducatorId, setSelectedEducatorId] = useState<string | null>(null);
-  const [serverError, setServerError]           = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting]         = useState(false);
+  const [serverError, setServerError]               = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting]             = useState(false);
 
   const { data: areas = [] }     = useQuery({ queryKey: ['areas'], queryFn: fetchAreas });
   const { data: types = [] }     = useQuery({
-    queryKey: ['types', selectedAreaId],
-    queryFn: () => fetchTypes(selectedAreaId ?? undefined),
+    queryKey: ['types'],
+    queryFn: () => fetchTypes(),
   });
   const { data: subtypes = [] }  = useQuery({
     queryKey: ['subtypes', selectedTypeId],
@@ -96,8 +98,9 @@ export default function NewTopicScreen() {
         description: data.description || null,
         status: 'draft',
         area_id: selectedAreaId,
+        subarea: subarea.trim() || null,
         type_id: selectedTypeId,
-        educator_id: selectedEducatorId,
+        educator_record_id: selectedEducatorId,
       });
       queryClient.invalidateQueries({ queryKey: ['allTopics'] });
       router.back();
@@ -146,13 +149,11 @@ export default function NewTopicScreen() {
               )}
             />
 
-            {titleValue.length > 2 ? (
-              <View style={styles.slugPreview}>
-                <Text style={styles.slugLabel}>URL slug</Text>
-                <Text style={styles.slugValue}>/topics/{toSlug(titleValue)}</Text>
-                <Text style={styles.slugHint}>Auto-generated from title.</Text>
-              </View>
-            ) : null}
+            <View style={styles.slugPreview}>
+              <Text style={styles.slugLabel}>URL slug</Text>
+              <Text style={styles.slugValue}>/topics/{toSlug(titleValue) || '…'}</Text>
+              <Text style={styles.slugHint}>Auto-generated from title.</Text>
+            </View>
 
             <Controller control={control} name="description"
               render={({ field: { onChange, onBlur, value } }) => (
@@ -211,6 +212,18 @@ export default function NewTopicScreen() {
             {selectedAreaLabel ? (
               <Text style={styles.selectionHint}>{selectedAreaLabel} selected</Text>
             ) : null}
+
+            {/* Cluster / Building */}
+            <View style={styles.pickerSection}>
+              <Text style={styles.pickerLabel}>Cluster / Building (optional)</Text>
+              <TextInput
+                style={styles.textField}
+                value={subarea}
+                onChangeText={setSubarea}
+                placeholder="e.g. Burj Khalifa"
+                placeholderTextColor="#9a9aa5"
+              />
+            </View>
 
             {/* Property Type */}
             {typeOptions.length > 0 ? (
@@ -290,6 +303,11 @@ const styles = StyleSheet.create({
   pickerLabel:    { fontSize: 13, fontWeight: '500', color: '#6e6e73', marginBottom: 6 },
   pickerSection:  { marginTop: 14, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7' },
   selectionHint:  { fontSize: 12, color: '#0071e3', marginTop: 5, marginLeft: 2 },
+  textField: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#1d1d1f', backgroundColor: '#f5f5f7',
+  },
 
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   chip:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f7', borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },

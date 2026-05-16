@@ -77,10 +77,7 @@ export async function fetchFullUserProfile(userId: string): Promise<FullUserProf
 }
 
 export async function deleteProfile(userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('profiles')
-    .delete()
-    .eq('id', userId);
+  const { error } = await supabase.rpc('delete_user', { p_profile_id: userId });
   if (error) throw error;
 }
 

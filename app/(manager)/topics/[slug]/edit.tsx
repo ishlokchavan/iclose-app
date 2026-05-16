@@ -77,8 +77,7 @@ export default function EditTopicScreen() {
     });
     if (topic.area) setSelectedArea(topic.area.slug);
     if (topic.property_type) setSelectedType(topic.property_type.slug);
-    const educatorName = (topic.educator as any)?.name ?? topic.educator?.profile?.full_name ?? null;
-    if (educatorName) setSelectedEducator(educatorName);
+    if (topic.educator?.name) setSelectedEducator(topic.educator.name);
   }, [topic, reset]);
 
   const updateMutation = useMutation({

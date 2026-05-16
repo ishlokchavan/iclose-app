@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -17,9 +17,11 @@ import { z } from 'zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { createTopic } from '../../../lib/supabase/queries/topics';
-import { fetchAreas, fetchTypes } from '../../../lib/supabase/queries/taxonomy';
+import { fetchAreas, fetchTypes, fetchSubtypes } from '../../../lib/supabase/queries/taxonomy';
 import { fetchEducators } from '../../../lib/supabase/queries/educators';
 import { Input } from '../../../components/ui/Input';
+import { SelectModal } from '../../../components/ui/SelectModal';
+import type { SelectOption } from '../../../components/ui/SelectModal';
 
 const schema = z.object({
   title:       z.string().min(3, 'Title must be at least 3 characters'),
@@ -38,18 +40,29 @@ export default function NewTopicScreen() {
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
-  const [selectedArea, setSelectedArea] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [selectedEducator, setSelectedEducator] = useState<string | null>(null);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedAreaId, setSelectedAreaId]     = useState<string | null>(null);
+  const [selectedTypeId, setSelectedTypeId]     = useState<string | null>(null);
+  const [selectedSubtypeIds, setSelectedSubtypeIds] = useState<string[]>([]);
+  const [selectedEducatorId, setSelectedEducatorId] = useState<string | null>(null);
+  const [serverError, setServerError]           = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting]         = useState(false);
 
-  const { data: areas = [] } = useQuery({ queryKey: ['areas'], queryFn: fetchAreas });
-  const { data: types = [] } = useQuery({
-    queryKey: ['types', selectedArea],
-    queryFn: () => fetchTypes(areas.find((a) => a.slug === selectedArea)?.id),
+  const { data: areas = [] }     = useQuery({ queryKey: ['areas'], queryFn: fetchAreas });
+  const { data: types = [] }     = useQuery({
+    queryKey: ['types', selectedAreaId],
+    queryFn: () => fetchTypes(selectedAreaId ?? undefined),
+  });
+  const { data: subtypes = [] }  = useQuery({
+    queryKey: ['subtypes', selectedTypeId],
+    queryFn: () => fetchSubtypes(selectedTypeId ?? undefined),
+    enabled: !!selectedTypeId,
   });
   const { data: educators = [] } = useQuery({ queryKey: ['educators'], queryFn: fetchEducators });
+
+  // When type changes, clear subtype selection
+  useEffect(() => {
+    setSelectedSubtypeIds([]);
+  }, [selectedTypeId]);
 
   const { control, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -58,22 +71,33 @@ export default function NewTopicScreen() {
 
   const titleValue = watch('title');
 
+  const areaOptions: SelectOption[]     = areas.map((a) => ({ label: a.name, value: a.id }));
+  const typeOptions: SelectOption[]     = types.map((t) => ({ label: t.name, value: t.id }));
+  const educatorOptions: SelectOption[] = educators.map((e) => ({ label: e.name ?? 'Unknown', value: e.id }));
+
+  const selectedAreaLabel     = areas.find((a) => a.id === selectedAreaId)?.name ?? null;
+  const selectedTypeLabel     = types.find((t) => t.id === selectedTypeId)?.name ?? null;
+  const selectedEducatorLabel = educators.find((e) => e.id === selectedEducatorId)?.name ?? null;
+
+  const toggleSubtype = (id: string) => {
+    setSelectedSubtypeIds((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
+
   const onSubmit = async (data: FormData) => {
     setServerError(null);
     setIsSubmitting(true);
     try {
-      const areaObj = areas.find((a) => a.slug === selectedArea);
-      const typeObj = types.find((t) => t.slug === selectedType);
-      const educatorObj = educators.find((e) => e.name === selectedEducator);
       await createTopic({
         title: data.title,
         slug: toSlug(data.title),
         youtube_id: data.youtube_id,
         description: data.description || null,
         status: 'draft',
-        area_id: areaObj?.id ?? null,
-        type_id: typeObj?.id ?? null,
-        educator_id: educatorObj?.id ?? null,
+        area_id: selectedAreaId,
+        type_id: selectedTypeId,
+        educator_id: selectedEducatorId,
       });
       queryClient.invalidateQueries({ queryKey: ['allTopics'] });
       router.back();
@@ -83,10 +107,6 @@ export default function NewTopicScreen() {
       setIsSubmitting(false);
     }
   };
-
-  const areaChips     = areas.map((a) => ({ label: a.name, value: a.slug }));
-  const typeChips     = types.map((t) => ({ label: t.name, value: t.slug }));
-  const educatorChips = educators.map((e) => ({ label: e.name ?? 'Unknown', value: e.name ?? e.id }));
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -154,25 +174,22 @@ export default function NewTopicScreen() {
           </View>
 
           {/* Educator */}
-          {educatorChips.length > 0 ? (
+          {educatorOptions.length > 0 ? (
             <>
               <Text style={styles.sectionLabel}>EDUCATOR</Text>
               <View style={styles.formCard}>
-                <View style={styles.pickerWrap}>
-                  <Text style={styles.pickerLabel}>The specialist who will appear on this topic.</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                    <TouchableOpacity onPress={() => setSelectedEducator(null)}
-                      style={[styles.chip, !selectedEducator && styles.chipActive]} activeOpacity={0.7}>
-                      <Text style={[styles.chipText, !selectedEducator && styles.chipTextActive]}>No educator</Text>
-                    </TouchableOpacity>
-                    {educatorChips.map((e) => (
-                      <TouchableOpacity key={e.value} onPress={() => setSelectedEducator(e.value)}
-                        style={[styles.chip, selectedEducator === e.value && styles.chipActive]} activeOpacity={0.7}>
-                        <Text style={[styles.chipText, selectedEducator === e.value && styles.chipTextActive]}>{e.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                <Text style={styles.pickerLabel}>The specialist who will appear on this topic.</Text>
+                <SelectModal
+                  title="Select Educator"
+                  options={educatorOptions}
+                  value={selectedEducatorId}
+                  onChange={setSelectedEducatorId}
+                  placeholder="No educator"
+                  noneLabel="No educator"
+                />
+                {selectedEducatorLabel ? (
+                  <Text style={styles.selectionHint}>{selectedEducatorLabel} selected</Text>
+                ) : null}
               </View>
             </>
           ) : null}
@@ -180,37 +197,58 @@ export default function NewTopicScreen() {
           {/* Taxonomy */}
           <Text style={styles.sectionLabel}>TAXONOMY</Text>
           <View style={styles.formCard}>
-            <View style={styles.pickerWrap}>
-              <Text style={styles.pickerLabel}>Area / Community</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                <TouchableOpacity onPress={() => { setSelectedArea(null); setSelectedType(null); }}
-                  style={[styles.chip, !selectedArea && styles.chipActive]} activeOpacity={0.7}>
-                  <Text style={[styles.chipText, !selectedArea && styles.chipTextActive]}>No area</Text>
-                </TouchableOpacity>
-                {areaChips.map((a) => (
-                  <TouchableOpacity key={a.value} onPress={() => { setSelectedArea(a.value); setSelectedType(null); }}
-                    style={[styles.chip, selectedArea === a.value && styles.chipActive]} activeOpacity={0.7}>
-                    <Text style={[styles.chipText, selectedArea === a.value && styles.chipTextActive]}>{a.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
+            {/* Area */}
+            <Text style={styles.pickerLabel}>Area / Community</Text>
+            <SelectModal
+              title="Select Area"
+              options={areaOptions}
+              value={selectedAreaId}
+              onChange={(val) => { setSelectedAreaId(val); setSelectedTypeId(null); setSelectedSubtypeIds([]); }}
+              placeholder="No area selected"
+              noneLabel="No area"
+              searchable
+            />
+            {selectedAreaLabel ? (
+              <Text style={styles.selectionHint}>{selectedAreaLabel} selected</Text>
+            ) : null}
 
-            {typeChips.length > 0 ? (
-              <View style={[styles.pickerWrap, styles.pickerBorder]}>
-                <Text style={styles.pickerLabel}>Type</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
-                  <TouchableOpacity onPress={() => setSelectedType(null)}
-                    style={[styles.chip, !selectedType && styles.chipActive]} activeOpacity={0.7}>
-                    <Text style={[styles.chipText, !selectedType && styles.chipTextActive]}>No type</Text>
-                  </TouchableOpacity>
-                  {typeChips.map((t) => (
-                    <TouchableOpacity key={t.value} onPress={() => setSelectedType(t.value)}
-                      style={[styles.chip, selectedType === t.value && styles.chipActive]} activeOpacity={0.7}>
-                      <Text style={[styles.chipText, selectedType === t.value && styles.chipTextActive]}>{t.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+            {/* Property Type */}
+            {typeOptions.length > 0 ? (
+              <View style={styles.pickerSection}>
+                <Text style={styles.pickerLabel}>Property Type</Text>
+                <SelectModal
+                  title="Select Property Type"
+                  options={typeOptions}
+                  value={selectedTypeId}
+                  onChange={(val) => { setSelectedTypeId(val); setSelectedSubtypeIds([]); }}
+                  placeholder="No type selected"
+                  noneLabel="No type"
+                />
+                {selectedTypeLabel ? (
+                  <Text style={styles.selectionHint}>{selectedTypeLabel} selected</Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Subtypes */}
+            {selectedTypeId && subtypes.length > 0 ? (
+              <View style={styles.pickerSection}>
+                <Text style={styles.pickerLabel}>Subtypes</Text>
+                <View style={styles.chipsWrap}>
+                  {subtypes.map((sub) => {
+                    const isActive = selectedSubtypeIds.includes(sub.id);
+                    return (
+                      <TouchableOpacity
+                        key={sub.id}
+                        onPress={() => toggleSubtype(sub.id)}
+                        style={[styles.chip, isActive && styles.chipActive]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.chipText, isActive && styles.chipTextActive]}>{sub.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
             ) : null}
           </View>
@@ -249,10 +287,11 @@ const styles = StyleSheet.create({
   slugValue:   { fontSize: 13, color: '#1d1d1f', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   slugHint:    { fontSize: 11, color: '#9a9aa5', marginTop: 2 },
 
-  pickerWrap:   { paddingVertical: 4 },
-  pickerBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7', marginTop: 8, paddingTop: 12 },
-  pickerLabel:  { fontSize: 13, fontWeight: '500', color: '#6e6e73', marginBottom: 6 },
+  pickerLabel:    { fontSize: 13, fontWeight: '500', color: '#6e6e73', marginBottom: 6 },
+  pickerSection:  { marginTop: 14, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7' },
+  selectionHint:  { fontSize: 12, color: '#0071e3', marginTop: 5, marginLeft: 2 },
 
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   chip:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f7', borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },
   chipActive:     { backgroundColor: '#1d1d1f', borderColor: '#1d1d1f' },
   chipText:       { fontSize: 13, fontWeight: '500', color: '#6e6e73' },

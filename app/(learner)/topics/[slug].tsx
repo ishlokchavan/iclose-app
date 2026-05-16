@@ -63,7 +63,7 @@ export default function TopicDetailScreen() {
     );
   }
 
-  const educatorName = topic.educator?.profile?.full_name ?? 'Unknown Educator';
+  const educatorName = topic.educator?.name ?? 'Unknown Educator';
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top']}>

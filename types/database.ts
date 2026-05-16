@@ -86,11 +86,18 @@ export interface Subtype {
 
 export interface Educator {
   id: string;
-  profile_id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
   bio: string | null;
-  specializations: string[] | null;
+  expertise: string | null;
+  photo_url: string | null;
+  status: string;
+  is_verified: boolean;
   created_at: string;
-  profile?: Profile;
+  updated_at: string;
 }
 
 export interface Topic {
@@ -109,7 +116,7 @@ export interface Topic {
   updated_at: string;
   area?: Area;
   property_type?: PropertyType;
-  educator?: Educator & { profile: Profile };
+  educator?: Educator;
 }
 
 export interface Resource {

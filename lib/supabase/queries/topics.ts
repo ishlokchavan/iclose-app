@@ -13,7 +13,7 @@ export async function fetchTopics(filters?: {
       *,
       area:areas(*),
       property_type:property_types(*),
-      educator:educators(*, profile:profiles(*))
+      educator:educators(*)
     `)
     .order('created_at', { ascending: false });
 
@@ -47,7 +47,7 @@ export async function fetchTopic(slug: string): Promise<Topic | null> {
       *,
       area:areas(*),
       property_type:property_types(*),
-      educator:educators(*, profile:profiles(*))
+      educator:educators(*)
     `)
     .eq('slug', slug)
     .single();
@@ -68,7 +68,7 @@ export async function fetchSavedTopics(userId: string): Promise<Topic[]> {
         *,
         area:areas(*),
         property_type:property_types(*),
-        educator:educators(*, profile:profiles(*))
+        educator:educators(*)
       )
     `)
     .eq('user_id', userId)
@@ -139,7 +139,7 @@ export async function fetchAllTopics(filters?: { status?: string }): Promise<Top
       *,
       area:areas(*),
       property_type:property_types(*),
-      educator:educators(*, profile:profiles(*))
+      educator:educators(*)
     `)
     .order('created_at', { ascending: false });
 

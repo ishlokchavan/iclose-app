@@ -59,7 +59,7 @@ function fmtShort(iso: string) {
 
 function educatorDisplay(topic: Topic): string | null {
   if (!topic.educator) return null;
-  return (topic.educator as any).name ?? topic.educator.profile?.full_name ?? null;
+  return topic.educator?.name ?? null;
 }
 
 // ─── Period picker ────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ interface TopicCardProps {
 }
 
 export function TopicCard({ topic, onPress, showStatus = false }: TopicCardProps) {
-  const educatorName = topic.educator?.profile?.full_name ?? 'Unknown Educator';
+  const educatorName = topic.educator?.name ?? 'Unknown Educator';
   const areaName = topic.area?.name;
 
   const thumbnailUrl = topic.cover_image_url

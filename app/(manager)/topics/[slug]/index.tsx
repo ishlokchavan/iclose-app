@@ -97,7 +97,7 @@ export default function ManagerTopicDetailScreen() {
   const cfg = STATUS_CFG[topic.status] ?? { label: topic.status.toUpperCase(), color: '#9a9aa5' };
   const thumbnail = topic.cover_image_url ??
     (topic.youtube_id ? `https://img.youtube.com/vi/${topic.youtube_id}/mqdefault.jpg` : null);
-  const educatorName = (topic.educator as any)?.name ?? topic.educator?.profile?.full_name ?? null;
+  const educatorName = topic.educator?.name ?? null;
   const isPending = statusMutation.isPending || deleteMutation.isPending;
 
   return (

@@ -479,7 +479,7 @@ function HireDetailScreen({
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
           >
             {/* Identity */}
             <View style={styles.detailIdentity}>
@@ -641,18 +641,6 @@ function HireDetailScreen({
               </View>
             ) : null}
 
-            {/* Delete */}
-            <TouchableOpacity
-              style={styles.deleteRow}
-              onPress={handleDelete}
-              disabled={deleteMutation.isPending}
-              activeOpacity={0.7}
-            >
-              {deleteMutation.isPending
-                ? <ActivityIndicator size="small" color="#b81c3a" />
-                : <Text style={styles.deleteText}>Delete application…</Text>}
-            </TouchableOpacity>
-
             {/* Meta */}
             <Text style={styles.sectionLabel}>META</Text>
             <View style={styles.card}>
@@ -684,6 +672,19 @@ function HireDetailScreen({
               )}
             </View>
           </ScrollView>
+
+          {/* Delete — pinned to bottom */}
+          <View style={[styles.deleteBar, { paddingBottom: insets.bottom + 8 }]}>
+            <TouchableOpacity
+              onPress={handleDelete}
+              disabled={deleteMutation.isPending}
+              activeOpacity={0.7}
+            >
+              {deleteMutation.isPending
+                ? <ActivityIndicator size="small" color="#b81c3a" />
+                : <Text style={styles.deleteText}>Delete application…</Text>}
+            </TouchableOpacity>
+          </View>
         </KeyboardAvoidingView>
       </Animated.View>
 
@@ -1033,7 +1034,11 @@ const styles = StyleSheet.create({
   remarkTime:       { fontSize: 12, color: '#9a9aa5' },
   remarkContent:    { fontSize: 14, color: '#3d3d42', lineHeight: 20 },
 
-  deleteRow: { alignItems: 'center', paddingVertical: 14 },
+  deleteBar: {
+    alignItems: 'center', paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7',
+    backgroundColor: '#f5f5f7',
+  },
   deleteText: { fontSize: 15, color: '#b81c3a', fontWeight: '500' },
 
   pdfWebView:      { flex: 1 },

@@ -36,17 +36,6 @@ function Header() {
       </View>
 
       <View style={styles.headerRight}>
-        <TouchableOpacity hitSlop={8} style={styles.iconBtn}>
-          <Ionicons name="notifications-outline" size={22} color="#0071e3" />
-        </TouchableOpacity>
-
-        <TouchableOpacity hitSlop={8} style={styles.iconBtn}>
-          <Ionicons name="notifications-outline" size={22} color="#1d1d1f" />
-          <View style={styles.bellBadge}>
-            <Text style={styles.bellBadgeText}>8</Text>
-          </View>
-        </TouchableOpacity>
-
         <TouchableOpacity
           hitSlop={8}
           onPress={() => router.push('/(manager)/profile' as any)}
@@ -260,16 +249,6 @@ const styles = StyleSheet.create({
   brandBold:  { color: '#1d1d1f', fontWeight: '700' },
   brandLight: { color: '#6e6e73', fontWeight: '400' },
   iconBtn:    { position: 'relative' },
-  bellBadge: {
-    position: 'absolute',
-    top: -4, right: -6,
-    minWidth: 18, height: 18, borderRadius: 9,
-    backgroundColor: '#0071e3',
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  bellBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-
   // Page title
   eyebrow: {
     fontSize: 11, fontWeight: '600', letterSpacing: 1.2,

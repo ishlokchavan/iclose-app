@@ -45,7 +45,6 @@ const SHEET_SECTIONS: SheetSection[] = [
     items: [
       { label: 'Users', icon: 'person-outline', route: '/(manager)/users' },
       { label: 'Profile', icon: 'id-card-outline', route: '/(manager)/profile' },
-      { label: 'Settings', icon: 'settings-outline', route: '/(manager)/settings' },
     ],
   },
 ];

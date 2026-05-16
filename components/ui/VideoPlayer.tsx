@@ -13,21 +13,17 @@ import {
 import YoutubeIframe, { PLAYER_STATES, YoutubeIframeRef } from 'react-native-youtube-iframe';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ScreenOrientation from 'expo-screen-orientation';
 
-// YouTube playerVars: controls=0 suppresses the entire YouTube UI.
-// Combined with pointerEvents="none" on the WebView wrapper, users
-// can't trigger any of YouTube's hover/tap overlays either.
+// useLocalHTML ensures controls:0 is embedded directly in the YT.Player constructor.
+// baseUrlOverride tells YouTube the embedding origin is lonelycpp.github.io (accepted domain).
+const BASE_URL = 'https://lonelycpp.github.io/react-native-youtube-iframe/';
+
 const PLAYER_PARAMS = {
   controls: false,
   rel: false,
   iv_load_policy: 3,
   preventFullScreen: false,
 } as const;
-
-// Use local HTML so controls:0 is injected directly into the YT.Player call,
-// and set the baseUrl to lonelycpp.github.io so YouTube accepts the embed origin.
-const BASE_URL = 'https://lonelycpp.github.io/react-native-youtube-iframe/';
 
 const WEBVIEW_PROPS = {
   allowsFullscreenVideo: false,
@@ -59,11 +55,18 @@ function Controls({
   isFullscreen, onTogglePlay, onSeek, onFullscreenToggle, onTap, bottomPad = 0,
 }: ControlsProps) {
   const [trackW, setTrackW] = useState(1);
-  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  // dragRatio: non-null while the user is dragging the seek handle
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+
+  const baseProgress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  const progress = dragRatio !== null ? dragRatio : baseProgress;
+
+  const getRatio = (locationX: number) =>
+    Math.max(0, Math.min(1, locationX / trackW));
 
   return (
     <View style={styles.controlsOverlay}>
-      {/* Tap-anywhere area to toggle controls visibility */}
+      {/* Tap-anywhere to toggle controls visibility — rendered first so it's below all other elements */}
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onTap} />
 
       <View style={styles.dimBottom} pointerEvents="none" />
@@ -76,16 +79,29 @@ function Controls({
 
       <View style={[styles.bottomBar, { paddingBottom: bottomPad + 10 }]}>
         <Text style={styles.timeText}>{fmt(currentTime)}</Text>
-        <TouchableOpacity
+
+        {/* Responder-based seek track supports both tap and drag */}
+        <View
           style={styles.seekTrack}
           onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
-          onPress={(e) => onSeek(Math.max(0, Math.min(1, e.nativeEvent.locationX / trackW)))}
-          activeOpacity={1}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={(e) =>
+            setDragRatio(getRatio(e.nativeEvent.locationX))}
+          onResponderMove={(e) =>
+            setDragRatio(getRatio(e.nativeEvent.locationX))}
+          onResponderRelease={(e) => {
+            const r = getRatio(e.nativeEvent.locationX);
+            setDragRatio(null);
+            onSeek(r);
+          }}
+          onResponderTerminate={() => setDragRatio(null)}
         >
           <View style={styles.trackBg} />
           <View style={[styles.trackFill, { width: `${progress * 100}%` }]} />
           <View style={[styles.trackDot, { left: `${Math.min(96, progress * 100)}%` }]} />
-        </TouchableOpacity>
+        </View>
+
         <Text style={styles.timeText}>{fmt(duration)}</Text>
         <TouchableOpacity style={styles.fsBtn} onPress={onFullscreenToggle} activeOpacity={0.8}>
           <Ionicons name={isFullscreen ? 'contract-outline' : 'expand-outline'} size={20} color="#fff" />
@@ -174,8 +190,6 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
 
   return (
     <View style={{ width, height, backgroundColor: '#000' }}>
-      {/* YouTube iframe wrapper — pointerEvents=none blocks all touches
-          so YouTube can't show its hover/tap overlays */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <YoutubeIframe
           ref={playerRef}
@@ -198,8 +212,6 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
         />
       </View>
 
-      {/* Black overlay shown while loading — hides any YouTube branding flash
-          before the player is ready and playing */}
       {buffering ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
           <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
@@ -227,6 +239,8 @@ function InlinePlayer({ videoId, width, height, startSecs = 0, onEnterFullscreen
 }
 
 // ─── Fullscreen player ────────────────────────────────────────────────────
+// Rendered inside a portrait Modal. We rotate the content 90° so it appears
+// landscape without requiring any native orientation API.
 interface FsPlayerProps {
   videoId: string;
   startSecs: number;
@@ -243,7 +257,9 @@ function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
   const playerRef = useRef<YoutubeIframeRef>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { width, height } = useWindowDimensions();
+
+  // W < H in portrait; after 90° rotation the video fills H × W (landscape)
+  const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
   const resetHide = useCallback(() => {
@@ -274,6 +290,7 @@ function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
   const onReady = useCallback(() => {
     setBuffering(false);
     if (startSecs > 1) playerRef.current?.seekTo(startSecs, true);
+    setPlaying(true);
     resetHide();
   }, [startSecs, resetHide]);
 
@@ -302,50 +319,67 @@ function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
     }
   }, [showControls, resetHide]);
 
+  // The inner content is sized H × W (landscape) then rotated 90° clockwise
+  // so it visually fills the portrait screen W × H.
+  // The translate offsets re-center it after rotation changes its apparent position.
+  const vidW = H;
+  const vidH = W;
+  const innerStyle = {
+    width: vidW,
+    height: vidH,
+    transform: [
+      { translateX: (W - H) / 2 },
+      { translateY: (H - W) / 2 },
+      { rotate: '90deg' },
+    ],
+  } as const;
+
   return (
-    <View style={styles.fsContainer}>
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <YoutubeIframe
-          ref={playerRef}
-          videoId={videoId}
-          height={height}
-          width={width}
-          play={playing}
-          useLocalHTML
-          baseUrlOverride={BASE_URL}
-          initialPlayerParams={PLAYER_PARAMS}
-          onChangeState={(s: PLAYER_STATES) => {
-            if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }
-            if (s === PLAYER_STATES.PAUSED)    setPlaying(false);
-            if (s === PLAYER_STATES.BUFFERING) setBuffering(true);
-            if (s === PLAYER_STATES.ENDED)     setPlaying(false);
-          }}
-          onReady={onReady}
-          webViewProps={WEBVIEW_PROPS}
-          forceAndroidAutoplay={Platform.OS === 'android'}
-        />
-      </View>
-
-      {buffering ? (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
-          <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
+    <View style={{ width: W, height: H, backgroundColor: '#000', overflow: 'hidden' }}>
+      <View style={innerStyle}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <YoutubeIframe
+            ref={playerRef}
+            videoId={videoId}
+            height={vidH}
+            width={vidW}
+            play={playing}
+            useLocalHTML
+            baseUrlOverride={BASE_URL}
+            initialPlayerParams={PLAYER_PARAMS}
+            onChangeState={(s: PLAYER_STATES) => {
+              if (s === PLAYER_STATES.PLAYING)   { setPlaying(true);  setBuffering(false); }
+              if (s === PLAYER_STATES.PAUSED)    setPlaying(false);
+              if (s === PLAYER_STATES.BUFFERING) setBuffering(true);
+              if (s === PLAYER_STATES.ENDED)     setPlaying(false);
+            }}
+            onReady={onReady}
+            webViewProps={WEBVIEW_PROPS}
+            forceAndroidAutoplay={Platform.OS === 'android'}
+          />
         </View>
-      ) : null}
 
-      {showControls ? (
-        <Controls
-          playing={playing} buffering={buffering}
-          currentTime={currentTime} duration={duration}
-          isFullscreen
-          onTogglePlay={togglePlay}
-          onSeek={handleSeek}
-          onFullscreenToggle={() => onClose(currentTime)}
-          onTap={handleTap}
-          bottomPad={insets.bottom}
-        />
-      ) : (
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleTap} />
-      )}
+        {buffering ? (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} pointerEvents="none">
+            <ActivityIndicator size="large" color="#fff" style={StyleSheet.absoluteFill} />
+          </View>
+        ) : null}
+
+        {showControls ? (
+          <Controls
+            playing={playing} buffering={buffering}
+            currentTime={currentTime} duration={duration}
+            isFullscreen
+            onTogglePlay={togglePlay}
+            onSeek={handleSeek}
+            onFullscreenToggle={() => onClose(currentTime)}
+            onTap={handleTap}
+            bottomPad={insets.bottom}
+          />
+        ) : (
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleTap} />
+        )}
+      </View>
     </View>
   );
 }
@@ -364,18 +398,6 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
 
   const { width } = useWindowDimensions();
   const playerH = Math.round(width * 9 / 16);
-
-  // Rotate to landscape while fullscreen is active; restore portrait on exit.
-  useEffect(() => {
-    if (fullscreen) {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
-    } else {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    }
-    return () => {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
-    };
-  }, [fullscreen]);
   const thumb = thumbnailUrl ?? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 
   if (!launched) {
@@ -396,8 +418,6 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
 
   return (
     <>
-      {/* When fullscreen is active, the inline player is unmounted to free the
-          single YouTube WebView instance — we remount it with resumeSecs on exit */}
       {!fullscreen ? (
         <InlinePlayer
           key={`inline-${resumeSecs}`}
@@ -463,14 +483,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8,
   },
   timeText:  { fontSize: 12, color: '#fff', fontWeight: '500', minWidth: 36, textAlign: 'center' },
-  seekTrack: { flex: 1, height: 20, justifyContent: 'center' },
+  seekTrack: { flex: 1, height: 28, justifyContent: 'center' },
   trackBg:   { height: 3, backgroundColor: 'rgba(255,255,255,0.35)', borderRadius: 2 },
   trackFill: { height: 3, backgroundColor: '#fff', borderRadius: 2, position: 'absolute', left: 0 },
   trackDot: {
-    position: 'absolute', top: '50%', width: 12, height: 12,
-    borderRadius: 6, backgroundColor: '#fff', marginTop: -6, marginLeft: -6,
+    position: 'absolute', top: '50%', width: 14, height: 14,
+    borderRadius: 7, backgroundColor: '#fff', marginTop: -7, marginLeft: -7,
   },
   fsBtn: { padding: 4 },
-
-  fsContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center' },
 });

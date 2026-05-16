@@ -127,6 +127,11 @@ export async function updateTopic(id: string, updates: Partial<Topic>): Promise<
   return data as Topic;
 }
 
+export async function deleteTopic(id: string): Promise<void> {
+  const { error } = await supabase.from('topics').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function fetchAllTopics(filters?: { status?: string }): Promise<Topic[]> {
   let query = supabase
     .from('topics')

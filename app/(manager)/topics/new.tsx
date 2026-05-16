@@ -6,8 +6,10 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,56 +20,54 @@ import { createTopic } from '../../../lib/supabase/queries/topics';
 import { fetchAreas, fetchTypes } from '../../../lib/supabase/queries/taxonomy';
 import { fetchEducators } from '../../../lib/supabase/queries/educators';
 import { Input } from '../../../components/ui/Input';
-import { Button } from '../../../components/ui/Button';
-import { TopicFilters } from '../../../features/topics/TopicFilters';
 
 const schema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters'),
-  youtube_id: z.string().min(5, 'Enter a valid YouTube video ID'),
+  title:       z.string().min(3, 'Title must be at least 3 characters'),
+  youtube_id:  z.string().min(5, 'Enter a valid YouTube video ID'),
   description: z.string().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
 
+function toSlug(title: string) {
+  return title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
 export default function NewTopicScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedEducator, setSelectedEducator] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: areas = [] } = useQuery({ queryKey: ['areas'], queryFn: fetchAreas });
   const { data: types = [] } = useQuery({
     queryKey: ['types', selectedArea],
     queryFn: () => fetchTypes(areas.find((a) => a.slug === selectedArea)?.id),
   });
-  const { data: educators = [] } = useQuery({
-    queryKey: ['educators'],
-    queryFn: fetchEducators,
-  });
+  const { data: educators = [] } = useQuery({ queryKey: ['educators'], queryFn: fetchEducators });
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<FormData>({
+  const { control, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { title: '', youtube_id: '', description: '' },
   });
 
+  const titleValue = watch('title');
+
   const onSubmit = async (data: FormData) => {
     setServerError(null);
+    setIsSubmitting(true);
     try {
       const areaObj = areas.find((a) => a.slug === selectedArea);
       const typeObj = types.find((t) => t.slug === selectedType);
-      const educatorObj = educators.find(
-        (e) => e.name === selectedEducator,
-      );
-
+      const educatorObj = educators.find((e) => e.name === selectedEducator);
       await createTopic({
         title: data.title,
-        slug: data.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+        slug: toSlug(data.title),
         youtube_id: data.youtube_id,
         description: data.description || null,
         status: 'draft',
@@ -75,143 +75,189 @@ export default function NewTopicScreen() {
         type_id: typeObj?.id ?? null,
         educator_id: educatorObj?.id ?? null,
       });
-
       queryClient.invalidateQueries({ queryKey: ['allTopics'] });
       router.back();
     } catch (err: any) {
       setServerError(err?.message ?? 'Failed to create topic.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const areaChips = areas.map((a) => ({ label: a.name, value: a.slug }));
-  const typeChips = types.map((t) => ({ label: t.name, value: t.slug }));
-  const educatorChips = educators.map((e) => ({
-    label: e.name ?? 'Unknown',
-    value: e.name ?? e.id,
-  }));
+  const areaChips     = areas.map((a) => ({ label: a.name, value: a.slug }));
+  const typeChips     = types.map((t) => ({ label: t.name, value: t.slug }));
+  const educatorChips = educators.map((e) => ({ label: e.name ?? 'Unknown', value: e.name ?? e.id }));
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className="flex-row items-center px-4 py-3 border-b border-hairline bg-surface">
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            className="mr-3"
-          >
-            <Ionicons name="close" size={24} color="#1d1d1f" />
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* Nav */}
+        <View style={styles.nav}>
+          <TouchableOpacity style={styles.navBack} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#0071e3" />
+            <Text style={styles.navBackText}>Topics</Text>
           </TouchableOpacity>
-          <Text className="flex-1 text-display-md text-ink font-semibold">New Topic</Text>
+          <Text style={styles.navTitle}>New Topic</Text>
+          <TouchableOpacity
+            style={[styles.navCreate, isSubmitting && { opacity: 0.5 }]}
+            onPress={handleSubmit(onSubmit)}
+            disabled={isSubmitting}
+            activeOpacity={0.8}
+          >
+            {isSubmitting
+              ? <ActivityIndicator size="small" color="#0071e3" />
+              : <Text style={styles.navCreateText}>Create</Text>}
+          </TouchableOpacity>
         </View>
 
         <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Controller
-            control={control}
-            name="title"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <Input
-                label="Title"
-                placeholder="e.g. Understanding Buyer's Agent Agreements"
-                onChangeText={onChange}
-                onBlur={onBlur}
-                value={value}
-                error={errors.title?.message}
-              />
-            )}
-          />
+          {/* Basics */}
+          <Text style={styles.sectionLabel}>BASICS</Text>
+          <View style={styles.formCard}>
+            <Controller control={control} name="title"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <Input label="Title" placeholder="e.g. 1450 sq.ft 2BED + Maid in JVC"
+                  onChangeText={onChange} onBlur={onBlur} value={value}
+                  error={errors.title?.message} />
+              )}
+            />
 
-          <Controller
-            control={control}
-            name="youtube_id"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <Input
-                label="YouTube Video ID"
-                placeholder="e.g. dQw4w9WgXcQ"
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={onChange}
-                onBlur={onBlur}
-                value={value}
-                error={errors.youtube_id?.message}
-                hint="The ID from the YouTube URL (after ?v=)"
-              />
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="description"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <Input
-                label="Description (optional)"
-                placeholder="What will learners gain from this topic?"
-                onChangeText={onChange}
-                onBlur={onBlur}
-                value={value}
-                multiline
-                numberOfLines={4}
-                style={{ height: 100, textAlignVertical: 'top' }}
-              />
-            )}
-          />
-
-          {areaChips.length > 0 && (
-            <View className="mb-4">
-              <Text className="text-body-sm font-medium text-ink mb-2">Area</Text>
-              <View className="-mx-4">
-                <TopicFilters
-                  chips={areaChips}
-                  selected={selectedArea}
-                  onSelect={(v) => { setSelectedArea(v); setSelectedType(null); }}
-                />
+            {titleValue.length > 2 ? (
+              <View style={styles.slugPreview}>
+                <Text style={styles.slugLabel}>URL slug</Text>
+                <Text style={styles.slugValue}>/topics/{toSlug(titleValue)}</Text>
+                <Text style={styles.slugHint}>Auto-generated from title.</Text>
               </View>
-            </View>
-          )}
+            ) : null}
 
-          {typeChips.length > 0 && (
-            <View className="mb-4">
-              <Text className="text-body-sm font-medium text-ink mb-2">Property Type</Text>
-              <View className="-mx-4">
-                <TopicFilters chips={typeChips} selected={selectedType} onSelect={setSelectedType} />
+            <Controller control={control} name="description"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <Input label="Description (optional)" placeholder="What learners will get out of this video."
+                  onChangeText={onChange} onBlur={onBlur} value={value}
+                  multiline numberOfLines={4} style={{ height: 100, textAlignVertical: 'top' }} />
+              )}
+            />
+
+            <Controller control={control} name="youtube_id"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <Input label="YouTube Video ID" placeholder="n9eQuJKP-Xs"
+                  autoCapitalize="none" autoCorrect={false}
+                  onChangeText={onChange} onBlur={onBlur} value={value}
+                  error={errors.youtube_id?.message}
+                  hint="11-character ID from the youtu.be/… or watch?v=… URL." />
+              )}
+            />
+          </View>
+
+          {/* Educator */}
+          {educatorChips.length > 0 ? (
+            <>
+              <Text style={styles.sectionLabel}>EDUCATOR</Text>
+              <View style={styles.formCard}>
+                <View style={styles.pickerWrap}>
+                  <Text style={styles.pickerLabel}>The specialist who will appear on this topic.</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                    <TouchableOpacity onPress={() => setSelectedEducator(null)}
+                      style={[styles.chip, !selectedEducator && styles.chipActive]} activeOpacity={0.7}>
+                      <Text style={[styles.chipText, !selectedEducator && styles.chipTextActive]}>No educator</Text>
+                    </TouchableOpacity>
+                    {educatorChips.map((e) => (
+                      <TouchableOpacity key={e.value} onPress={() => setSelectedEducator(e.value)}
+                        style={[styles.chip, selectedEducator === e.value && styles.chipActive]} activeOpacity={0.7}>
+                        <Text style={[styles.chipText, selectedEducator === e.value && styles.chipTextActive]}>{e.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
               </View>
-            </View>
-          )}
-
-          {educatorChips.length > 0 && (
-            <View className="mb-4">
-              <Text className="text-body-sm font-medium text-ink mb-2">Educator</Text>
-              <View className="-mx-4">
-                <TopicFilters
-                  chips={educatorChips}
-                  selected={selectedEducator}
-                  onSelect={setSelectedEducator}
-                />
-              </View>
-            </View>
-          )}
-
-          {serverError ? (
-            <View className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-              <Text className="text-body-sm text-destructive">{serverError}</Text>
-            </View>
+            </>
           ) : null}
 
-          <Button
-            label="Create Topic"
-            onPress={handleSubmit(onSubmit)}
-            loading={isSubmitting}
-            size="lg"
-          />
+          {/* Taxonomy */}
+          <Text style={styles.sectionLabel}>TAXONOMY</Text>
+          <View style={styles.formCard}>
+            <View style={styles.pickerWrap}>
+              <Text style={styles.pickerLabel}>Area / Community</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                <TouchableOpacity onPress={() => { setSelectedArea(null); setSelectedType(null); }}
+                  style={[styles.chip, !selectedArea && styles.chipActive]} activeOpacity={0.7}>
+                  <Text style={[styles.chipText, !selectedArea && styles.chipTextActive]}>No area</Text>
+                </TouchableOpacity>
+                {areaChips.map((a) => (
+                  <TouchableOpacity key={a.value} onPress={() => { setSelectedArea(a.value); setSelectedType(null); }}
+                    style={[styles.chip, selectedArea === a.value && styles.chipActive]} activeOpacity={0.7}>
+                    <Text style={[styles.chipText, selectedArea === a.value && styles.chipTextActive]}>{a.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {typeChips.length > 0 ? (
+              <View style={[styles.pickerWrap, styles.pickerBorder]}>
+                <Text style={styles.pickerLabel}>Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+                  <TouchableOpacity onPress={() => setSelectedType(null)}
+                    style={[styles.chip, !selectedType && styles.chipActive]} activeOpacity={0.7}>
+                    <Text style={[styles.chipText, !selectedType && styles.chipTextActive]}>No type</Text>
+                  </TouchableOpacity>
+                  {typeChips.map((t) => (
+                    <TouchableOpacity key={t.value} onPress={() => setSelectedType(t.value)}
+                      style={[styles.chip, selectedType === t.value && styles.chipActive]} activeOpacity={0.7}>
+                      <Text style={[styles.chipText, selectedType === t.value && styles.chipTextActive]}>{t.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+          </View>
+
+          {serverError ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{serverError}</Text>
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#f5f5f7' },
+
+  nav: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingBottom: 10, paddingTop: 6,
+    backgroundColor: '#f5f5f7',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7',
+  },
+  navBack:       { flexDirection: 'row', alignItems: 'center', width: 88, paddingLeft: 4 },
+  navBackText:   { fontSize: 17, color: '#0071e3', marginLeft: 2 },
+  navTitle:      { flex: 1, fontSize: 17, fontWeight: '600', color: '#1d1d1f', textAlign: 'center' },
+  navCreate:     { width: 88, alignItems: 'flex-end', paddingRight: 12 },
+  navCreateText: { fontSize: 17, fontWeight: '600', color: '#0071e3' },
+
+  sectionLabel: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.5, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 5 },
+  formCard:     { backgroundColor: '#ffffff', marginHorizontal: 16, borderRadius: 12, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },
+
+  slugPreview: { marginBottom: 8, paddingHorizontal: 4 },
+  slugLabel:   { fontSize: 12, fontWeight: '500', color: '#6e6e73', marginBottom: 2 },
+  slugValue:   { fontSize: 13, color: '#1d1d1f', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  slugHint:    { fontSize: 11, color: '#9a9aa5', marginTop: 2 },
+
+  pickerWrap:   { paddingVertical: 4 },
+  pickerBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7', marginTop: 8, paddingTop: 12 },
+  pickerLabel:  { fontSize: 13, fontWeight: '500', color: '#6e6e73', marginBottom: 6 },
+
+  chip:           { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f7', borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7' },
+  chipActive:     { backgroundColor: '#1d1d1f', borderColor: '#1d1d1f' },
+  chipText:       { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
+  chipTextActive: { color: '#ffffff', fontWeight: '600' },
+
+  errorBox:  { marginHorizontal: 16, marginTop: 8, backgroundColor: '#fff0f0', borderRadius: 12, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#fecaca' },
+  errorText: { fontSize: 14, color: '#b81c3a' },
+});

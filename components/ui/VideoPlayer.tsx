@@ -219,7 +219,7 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
   const fsRef    = useRef<WebView | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const { width } = useWindowDimensions();
+  const { width, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const playerH = Math.round(width * 9 / 16);
 
@@ -351,7 +351,7 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
             <PlayerView
               videoId={videoId}
               startSecs={currentTime}
-              height={useWindowDimensions().height}
+              height={screenHeight}
               onMessage={handleMessage}
               wvRef={fsRef}
             />

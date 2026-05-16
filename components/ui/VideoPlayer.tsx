@@ -39,7 +39,8 @@ function onYouTubeIframeAPIReady(){
     playerVars:{
       autoplay:1,controls:0,rel:0,showinfo:0,
       iv_load_policy:3,playsinline:1,disablekb:1,
-      fs:0,start:${Math.floor(startSecs)}
+      fs:0,start:${Math.floor(startSecs)},
+      origin:'https://www.youtube.com'
     },
     events:{
       onReady:function(e){dur=e.target.getDuration();post({t:'ready',dur:dur})},
@@ -274,12 +275,14 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
       >
         <WebView
           ref={mainRef}
-          source={{ html: buildHtml(videoId) }}
+          source={{ html: buildHtml(videoId), baseUrl: 'https://www.youtube.com' }}
           onMessage={mainMsgHandler}
+          userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
           allowsFullscreenVideo={false}
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
           javaScriptEnabled
+          originWhitelist={['*']}
           scrollEnabled={false}
           bounces={false}
           style={styles.webview}
@@ -298,12 +301,14 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
           <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={resetTimer}>
             <WebView
               ref={fsRef}
-              source={{ html: buildHtml(videoId, currentTime) }}
+              source={{ html: buildHtml(videoId, currentTime), baseUrl: 'https://www.youtube.com' }}
               onMessage={fsMsgHandler}
+              userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
               allowsFullscreenVideo={false}
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
               javaScriptEnabled
+              originWhitelist={['*']}
               scrollEnabled={false}
               bounces={false}
               style={styles.webview}

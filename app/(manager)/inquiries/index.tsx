@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   fetchAllInquiries,
   updateInquiryStatus,
+  deleteInquiry,
 } from '../../../lib/supabase/queries/inquiries';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Spinner } from '../../../components/ui/Spinner';
@@ -262,6 +263,26 @@ function InquiryDetailScreen({
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update.'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteInquiry(cached!.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['allInquiries'] });
+      handleClose();
+    },
+    onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to delete.'),
+  });
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Inquiry',
+      'This will permanently remove this inquiry. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate() },
+      ],
+    );
+  };
+
   const cfg = cached ? statusCfg(cached.status) : null;
 
   return (
@@ -358,6 +379,15 @@ function InquiryDetailScreen({
               </View>
             </View>
           </ScrollView>
+
+          {/* Delete — pinned to bottom */}
+          <View style={[styles.deleteBar, { paddingBottom: insets.bottom + 8 }]}>
+            <TouchableOpacity onPress={handleDelete} disabled={deleteMutation.isPending} activeOpacity={0.7}>
+              {deleteMutation.isPending
+                ? <ActivityIndicator size="small" color="#b81c3a" />
+                : <Text style={styles.deleteText}>Delete inquiry…</Text>}
+            </TouchableOpacity>
+          </View>
         </KeyboardAvoidingView>
       </Animated.View>
 
@@ -585,4 +615,10 @@ const styles = StyleSheet.create({
   statusDropdownFull: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   statusDropdownFullText: { fontSize: 15, fontWeight: '500', color: '#1d1d1f' },
 
+  deleteBar: {
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d2d2d7',
+    paddingHorizontal: 20, paddingTop: 12, alignItems: 'center',
+    backgroundColor: '#f5f5f7',
+  },
+  deleteText: { fontSize: 15, color: '#b81c3a', fontWeight: '500' },
 });

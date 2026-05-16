@@ -62,6 +62,11 @@ export async function createInquiry(inquiry: {
   return data as Inquiry;
 }
 
+export async function deleteInquiry(id: string): Promise<void> {
+  const { error } = await supabase.from('inquiries').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateInquiryStatus(
   id: string,
   status: InquiryStatus,

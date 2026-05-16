@@ -319,20 +319,33 @@ function FsPlayer({ videoId, startSecs, onClose }: FsPlayerProps) {
     }
   }, [showControls, resetHide]);
 
-  // The inner content is sized H × W (landscape) then rotated 90° clockwise
-  // so it visually fills the portrait screen W × H.
-  // The translate offsets re-center it after rotation changes its apparent position.
-  const vidW = H;
-  const vidH = W;
+  // Fit a 16:9 landscape video inside the portrait Modal (W × H).
+  // After 90° rotation the inner view occupies (vidH wide × vidW tall) visually.
+  // If the screen is wider than 16:9 (e.g. notched phones), we letterbox by
+  // constraining the video to 16:9 so the YouTube iframe doesn't overflow
+  // and leak its title/info chrome at the top/bottom of the iframe.
+  const TARGET_RATIO = 16 / 9;
+  const landscapeW = H;
+  const landscapeH = W;
+  let vidW: number;
+  let vidH: number;
+  if (landscapeW / landscapeH > TARGET_RATIO) {
+    vidH = landscapeH;
+    vidW = Math.round(landscapeH * TARGET_RATIO);
+  } else {
+    vidW = landscapeW;
+    vidH = Math.round(landscapeW / TARGET_RATIO);
+  }
   const innerStyle = {
     width: vidW,
     height: vidH,
     transform: [
-      { translateX: (W - H) / 2 },
-      { translateY: (H - W) / 2 },
+      { translateX: (W - vidW) / 2 },
+      { translateY: (H - vidH) / 2 },
       { rotate: '90deg' },
     ],
-  } as const;
+    backfaceVisibility: 'hidden' as const,
+  };
 
   return (
     <View style={{ width: W, height: H, backgroundColor: '#000', overflow: 'hidden' }}>
@@ -474,8 +487,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   centerBtn: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: 'rgba(0,0,0,0.42)',
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: '#000',
     alignItems: 'center', justifyContent: 'center', paddingLeft: 4,
   },
   bottomBar: {

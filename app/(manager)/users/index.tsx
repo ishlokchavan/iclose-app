@@ -585,6 +585,7 @@ export default function UsersScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.periodScroll}
         contentContainerStyle={styles.periodRow}
       >
         {PERIOD_OPTIONS.map((opt) => {
@@ -697,9 +698,10 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: '#1d1d1f', marginLeft: 8 },
 
+  periodScroll: { flexGrow: 0, flexShrink: 0, height: 44 },
   periodRow: {
-    paddingHorizontal: 16, paddingBottom: 10, gap: 8,
-    flexDirection: 'row', alignItems: 'flex-start',
+    paddingHorizontal: 16, gap: 8,
+    flexDirection: 'row', alignItems: 'center',
   },
   periodChip: {
     paddingHorizontal: 14, paddingVertical: 6,

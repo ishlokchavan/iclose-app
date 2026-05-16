@@ -9,6 +9,8 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -217,6 +219,7 @@ function PropertyTypeCard({
 export default function TaxonomyScreen() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('communities');
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [addingArea, setAddingArea] = useState(false);
   const [newAreaName, setNewAreaName] = useState('');
@@ -305,12 +308,18 @@ export default function TaxonomyScreen() {
 
   const handleShowAddArea = () => {
     setAddingArea(true);
-    setTimeout(() => addAreaInputRef.current?.focus(), 50);
+    setTimeout(() => {
+      addAreaInputRef.current?.focus();
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   const handleShowAddType = () => {
     setAddingType(true);
-    setTimeout(() => addTypeInputRef.current?.focus(), 50);
+    setTimeout(() => {
+      addTypeInputRef.current?.focus();
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   const isLoading = tab === 'communities' ? areasLoading : typesLoading;
@@ -351,8 +360,15 @@ export default function TaxonomyScreen() {
       {isLoading ? (
         <Spinner fullScreen />
       ) : (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
         <ScrollView
+          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
@@ -484,6 +500,7 @@ export default function TaxonomyScreen() {
             </>
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </SafeAreaView>
   );

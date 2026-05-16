@@ -161,7 +161,7 @@ function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => vo
             </TouchableOpacity>
           </View>
           <Text style={styles.inviteSubtitle}>
-            They'll receive an email with a link to set their password.
+            They'll receive a "Set your password" email and can sign in right away.
           </Text>
           <EditField label="Full name" value={name} onChangeText={setName} placeholder="Sarah Al-Mansouri" autoCapitalize="words" />
           <EditField label="Email" value={email} onChangeText={setEmail} placeholder="sarah@company.ae" keyboardType="email-address" />

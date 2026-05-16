@@ -51,3 +51,8 @@ export async function getResumeSignedUrl(path: string): Promise<string | null> {
   if (error) return null;
   return data?.signedUrl ?? null;
 }
+
+export async function deleteHireApplication(id: string): Promise<void> {
+  const { error } = await supabase.from('intern_applications').delete().eq('id', id);
+  if (error) throw error;
+}

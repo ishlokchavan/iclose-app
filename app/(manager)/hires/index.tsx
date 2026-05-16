@@ -27,6 +27,7 @@ import {
   fetchHireRemarks,
   addHireRemark,
   getResumeSignedUrl,
+  deleteHireApplication,
 } from '../../../lib/supabase/queries/hires';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Spinner } from '../../../components/ui/Spinner';
@@ -416,6 +417,27 @@ function HireDetailScreen({
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update status.'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteHireApplication(cached!.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hireApplications'] });
+      handleClose();
+    },
+    onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to delete application.'),
+  });
+
+  const handleDelete = () => {
+    const fullName = `${cached?.first_name ?? ''} ${cached?.last_name ?? ''}`.trim() || 'this applicant';
+    Alert.alert(
+      'Delete Application',
+      `Remove ${fullName}'s application? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate() },
+      ],
+    );
+  };
+
   const handleStatusSelect = (s: string) => {
     if (s === 'rejected') {
       setPendingStatus(s);
@@ -618,6 +640,18 @@ function HireDetailScreen({
                 {remarks.map((r) => <RemarkItem key={r.id} remark={r} />)}
               </View>
             ) : null}
+
+            {/* Delete */}
+            <TouchableOpacity
+              style={styles.deleteRow}
+              onPress={handleDelete}
+              disabled={deleteMutation.isPending}
+              activeOpacity={0.7}
+            >
+              {deleteMutation.isPending
+                ? <ActivityIndicator size="small" color="#b81c3a" />
+                : <Text style={styles.deleteText}>Delete application…</Text>}
+            </TouchableOpacity>
 
             {/* Meta */}
             <Text style={styles.sectionLabel}>META</Text>
@@ -998,6 +1032,9 @@ const styles = StyleSheet.create({
   remarkAuthor:     { fontSize: 13, fontWeight: '600', color: '#1d1d1f' },
   remarkTime:       { fontSize: 12, color: '#9a9aa5' },
   remarkContent:    { fontSize: 14, color: '#3d3d42', lineHeight: 20 },
+
+  deleteRow: { alignItems: 'center', paddingVertical: 14 },
+  deleteText: { fontSize: 15, color: '#b81c3a', fontWeight: '500' },
 
   pdfWebView:      { flex: 1 },
   pdfLoading:      { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f7' },

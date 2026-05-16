@@ -67,7 +67,7 @@ export default function ManagerDashboard() {
     total: inquiries.length,
     open: inquiries.filter((i) => i.status === 'open').length,
     inProgress: inquiries.filter((i) => i.status === 'in_progress').length,
-    resolved: inquiries.filter((i) => i.status === 'resolved').length,
+    resolved: inquiries.filter((i) => i.status === 'closed').length,
   };
 
   return (

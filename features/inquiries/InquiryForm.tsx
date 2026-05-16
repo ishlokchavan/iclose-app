@@ -12,7 +12,6 @@ import { createInquiry } from '../../lib/supabase/queries/inquiries';
 import { useAuth } from '../../lib/auth/context';
 
 const schema = z.object({
-  title: z.string().min(5, 'Title must be at least 5 characters'),
   description: z.string().min(20, 'Description must be at least 20 characters'),
 });
 
@@ -46,7 +45,7 @@ export function InquiryForm({ topicId, onSuccess }: InquiryFormProps) {
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { title: '', description: '' },
+    defaultValues: { description: '' },
   });
 
   const onSubmit = async (data: FormData) => {
@@ -57,12 +56,11 @@ export function InquiryForm({ topicId, onSuccess }: InquiryFormProps) {
       const typeObj = types.find((t) => t.slug === selectedType);
 
       await createInquiry({
-        user_id: user.id,
-        title: data.title,
+        learner_id: user.id,
         description: data.description,
         area_id: areaObj?.id,
         type_id: typeObj?.id,
-        topic_id: topicId,
+        source_topic_id: topicId,
       });
       onSuccess();
     } catch (err: any) {
@@ -75,21 +73,6 @@ export function InquiryForm({ topicId, onSuccess }: InquiryFormProps) {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
-      <Controller
-        control={control}
-        name="title"
-        render={({ field: { onChange, onBlur, value } }) => (
-          <Input
-            label="Title"
-            placeholder="Brief summary of your question"
-            onChangeText={onChange}
-            onBlur={onBlur}
-            value={value}
-            error={errors.title?.message}
-          />
-        )}
-      />
-
       <Controller
         control={control}
         name="description"

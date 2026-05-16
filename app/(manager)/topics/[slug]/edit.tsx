@@ -85,7 +85,7 @@ export default function EditTopicScreen() {
       const areaObj = areas.find((a) => a.slug === selectedArea);
       const typeObj = types.find((t) => t.slug === selectedType);
       const educatorObj = educators.find(
-        (e) => e.profile?.full_name === selectedEducator,
+        (e) => e.name === selectedEducator,
       );
       return updateTopic(topic!.id, {
         title: data.title,
@@ -111,8 +111,8 @@ export default function EditTopicScreen() {
   const areaChips = areas.map((a) => ({ label: a.name, value: a.slug }));
   const typeChips = types.map((t) => ({ label: t.name, value: t.slug }));
   const educatorChips = educators.map((e) => ({
-    label: e.profile?.full_name ?? 'Unknown',
-    value: e.profile?.full_name ?? e.id,
+    label: e.name ?? 'Unknown',
+    value: e.name ?? e.id,
   }));
 
   return (

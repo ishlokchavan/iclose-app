@@ -2,7 +2,7 @@ export type UserRole = 'learner' | 'educator' | 'manager' | 'admin';
 
 export type TopicStatus = 'draft' | 'published' | 'archived';
 
-export type InquiryStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type InquiryStatus = 'open' | 'assigned' | 'in_progress' | 'closed';
 
 export interface Profile {
   id: string;
@@ -128,20 +128,20 @@ export interface SavedTopic {
 
 export interface Inquiry {
   id: string;
-  user_id: string;
-  topic_id: string | null;
-  title: string;
+  learner_id: string | null;
   description: string;
+  email: string | null;
+  phone: string | null;
   area_id: string | null;
+  subarea: string | null;
   type_id: string | null;
+  source_topic_id: string | null;
+  assigned_educator_id: string | null;
   status: InquiryStatus;
-  response: string | null;
-  responded_by: string | null;
-  responded_at: string | null;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
-  user?: Profile;
-  topic?: Topic;
+  learner?: Profile;
   area?: Area;
   property_type?: PropertyType;
 }

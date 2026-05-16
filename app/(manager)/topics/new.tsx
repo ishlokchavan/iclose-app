@@ -62,7 +62,7 @@ export default function NewTopicScreen() {
       const areaObj = areas.find((a) => a.slug === selectedArea);
       const typeObj = types.find((t) => t.slug === selectedType);
       const educatorObj = educators.find(
-        (e) => e.profile?.full_name === selectedEducator,
+        (e) => e.name === selectedEducator,
       );
 
       await createTopic({
@@ -86,8 +86,8 @@ export default function NewTopicScreen() {
   const areaChips = areas.map((a) => ({ label: a.name, value: a.slug }));
   const typeChips = types.map((t) => ({ label: t.name, value: t.slug }));
   const educatorChips = educators.map((e) => ({
-    label: e.profile?.full_name ?? 'Unknown',
-    value: e.profile?.full_name ?? e.id,
+    label: e.name ?? 'Unknown',
+    value: e.name ?? e.id,
   }));
 
   return (

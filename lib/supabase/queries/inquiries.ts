@@ -1,39 +1,32 @@
 import { supabase } from '../client';
-import type { Inquiry } from '../../../types/database';
+import type { Inquiry, InquiryStatus } from '../../../types/database';
 
-export async function fetchMyInquiries(userId: string): Promise<Inquiry[]> {
-  const { data, error } = await supabase
-    .from('inquiries')
-    .select(`
-      *,
-      topic:topics(id, title, slug),
-      area:areas(*),
-      property_type:property_types(*)
-    `)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as Inquiry[];
-}
+const INQUIRY_SELECT = `
+  *,
+  learner:profiles!learner_id(*),
+  area:areas(*),
+  property_type:property_types!type_id(*)
+`;
 
 export async function fetchAllInquiries(filters?: { status?: string }): Promise<Inquiry[]> {
   let query = supabase
     .from('inquiries')
-    .select(`
-      *,
-      user:profiles(*),
-      topic:topics(id, title, slug),
-      area:areas(*),
-      property_type:property_types(*)
-    `)
+    .select(INQUIRY_SELECT)
     .order('created_at', { ascending: false });
 
-  if (filters?.status) {
-    query = query.eq('status', filters.status);
-  }
+  if (filters?.status) query = query.eq('status', filters.status);
 
   const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as Inquiry[];
+}
+
+export async function fetchMyInquiries(learnerId: string): Promise<Inquiry[]> {
+  const { data, error } = await supabase
+    .from('inquiries')
+    .select(INQUIRY_SELECT)
+    .eq('learner_id', learnerId)
+    .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Inquiry[];
 }
@@ -41,16 +34,9 @@ export async function fetchAllInquiries(filters?: { status?: string }): Promise<
 export async function fetchInquiry(id: string): Promise<Inquiry | null> {
   const { data, error } = await supabase
     .from('inquiries')
-    .select(`
-      *,
-      user:profiles(*),
-      topic:topics(id, title, slug),
-      area:areas(*),
-      property_type:property_types(*)
-    `)
+    .select(INQUIRY_SELECT)
     .eq('id', id)
     .single();
-
   if (error) {
     if (error.code === 'PGRST116') return null;
     throw error;
@@ -59,12 +45,13 @@ export async function fetchInquiry(id: string): Promise<Inquiry | null> {
 }
 
 export async function createInquiry(inquiry: {
-  user_id: string;
-  title: string;
+  learner_id: string;
   description: string;
+  email?: string;
+  phone?: string;
   area_id?: string;
   type_id?: string;
-  topic_id?: string;
+  source_topic_id?: string;
 }): Promise<Inquiry> {
   const { data, error } = await supabase
     .from('inquiries')
@@ -77,26 +64,13 @@ export async function createInquiry(inquiry: {
 
 export async function updateInquiryStatus(
   id: string,
-  status: Inquiry['status'],
-  response?: string,
-  respondedBy?: string,
+  status: InquiryStatus,
 ): Promise<Inquiry> {
-  const updates: Partial<Inquiry> = {
-    status,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (response) {
-    updates.response = response;
-    updates.responded_by = respondedBy;
-    updates.responded_at = new Date().toISOString();
-  }
-
   const { data, error } = await supabase
     .from('inquiries')
-    .update(updates)
+    .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
+    .select(INQUIRY_SELECT)
     .single();
   if (error) throw error;
   return data as Inquiry;

@@ -25,7 +25,6 @@ import {
 } from '../../../lib/supabase/queries/inquiries';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Spinner } from '../../../components/ui/Spinner';
-import { useAuth } from '../../../lib/auth/context';
 import type { Inquiry, InquiryStatus } from '../../../types/database';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -37,7 +36,6 @@ const ALL_STATUSES: { value: string; label: string; color: string }[] = [
   { value: 'open',        label: 'Open',        color: '#d97706' },
   { value: 'assigned',    label: 'Assigned',    color: '#0071e3' },
   { value: 'in_progress', label: 'In Progress', color: '#7c3aed' },
-  { value: 'resolved',    label: 'Resolved',    color: '#16a34a' },
   { value: 'closed',      label: 'Closed',      color: '#6e6e73' },
 ];
 
@@ -46,7 +44,6 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'Open',        value: 'open' },
   { label: 'Assigned',    value: 'assigned' },
   { label: 'In Progress', value: 'in_progress' },
-  { label: 'Resolved',    value: 'resolved' },
   { label: 'Closed',      value: 'closed' },
 ];
 
@@ -180,20 +177,25 @@ function InquiryCard({
         <Text style={styles.cardDesc} numberOfLines={2}>{inquiry.description}</Text>
 
         {/* User */}
-        {inquiry.user ? (
-          <View style={styles.cardMeta}>
+        <View style={styles.cardMeta}>
+          {inquiry.learner?.full_name ? (
             <View style={styles.cardMetaItem}>
               <Ionicons name="person-outline" size={12} color="#6e6e73" />
-              <Text style={styles.cardMetaText} numberOfLines={1}>{inquiry.user.full_name ?? '—'}</Text>
+              <Text style={styles.cardMetaText} numberOfLines={1}>{inquiry.learner.full_name}</Text>
             </View>
-            {inquiry.user.email ? (
-              <View style={styles.cardMetaItem}>
-                <Ionicons name="mail-outline" size={12} color="#6e6e73" />
-                <Text style={styles.cardMetaText} numberOfLines={1}>{inquiry.user.email}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+          ) : inquiry.email ? (
+            <View style={styles.cardMetaItem}>
+              <Ionicons name="mail-outline" size={12} color="#6e6e73" />
+              <Text style={styles.cardMetaText} numberOfLines={1}>{inquiry.email}</Text>
+            </View>
+          ) : null}
+          {inquiry.learner?.email && inquiry.learner?.full_name ? (
+            <View style={styles.cardMetaItem}>
+              <Ionicons name="mail-outline" size={12} color="#6e6e73" />
+              <Text style={styles.cardMetaText} numberOfLines={1}>{inquiry.learner.email}</Text>
+            </View>
+          ) : null}
+        </View>
 
         {/* Area + type */}
         {(inquiry.area || inquiry.property_type) ? (
@@ -232,18 +234,15 @@ function InquiryDetailScreen({
   inquiry: Inquiry | null;
   onClose: () => void;
 }) {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const translateX = useRef(new Animated.Value(SCREEN_W)).current;
   const [cached, setCached] = useState<Inquiry | null>(null);
-  const [response, setResponse] = useState('');
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
 
   useEffect(() => {
     if (inquiry) {
       setCached(inquiry);
-      setResponse(inquiry.response ?? '');
       translateX.setValue(SCREEN_W);
       Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
     }
@@ -254,19 +253,14 @@ function InquiryDetailScreen({
   };
 
   const statusMutation = useMutation({
-    mutationFn: ({ status, resp }: { status: string; resp?: string }) =>
-      updateInquiryStatus(cached!.id, status as InquiryStatus, resp, user?.id),
+    mutationFn: (status: string) =>
+      updateInquiryStatus(cached!.id, status as InquiryStatus),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['allInquiries'] });
       setCached(updated);
     },
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update.'),
   });
-
-  const handleSaveResponse = () => {
-    if (!response.trim()) return;
-    statusMutation.mutate({ status: cached!.status, resp: response.trim() });
-  };
 
   const cfg = cached ? statusCfg(cached.status) : null;
 
@@ -300,24 +294,24 @@ function InquiryDetailScreen({
             </View>
 
             {/* User */}
-            {cached?.user ? (
+            {cached?.learner ? (
               <>
                 <Text style={styles.sectionLabel}>FROM</Text>
                 <View style={styles.infoCard}>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Name</Text>
-                    <Text style={styles.infoValue}>{cached.user.full_name ?? '—'}</Text>
+                    <Text style={styles.infoValue}>{cached.learner.full_name ?? '—'}</Text>
                   </View>
                   <View style={[styles.infoRow, styles.infoRowBorder]}>
                     <Text style={styles.infoLabel}>Email</Text>
-                    <Text style={styles.infoValue}>{cached.user.email ?? '—'}</Text>
+                    <Text style={styles.infoValue}>{cached.learner.email ?? '—'}</Text>
                   </View>
                 </View>
               </>
             ) : null}
 
             {/* Context */}
-            {(cached?.area || cached?.property_type || cached?.topic) ? (
+            {(cached?.area || cached?.property_type) ? (
               <>
                 <Text style={styles.sectionLabel}>CONTEXT</Text>
                 <View style={styles.infoCard}>
@@ -331,12 +325,6 @@ function InquiryDetailScreen({
                     <View style={[styles.infoRow, cached?.area ? styles.infoRowBorder : undefined]}>
                       <Text style={styles.infoLabel}>Type</Text>
                       <Text style={styles.infoValue}>{cached.property_type.name}</Text>
-                    </View>
-                  ) : null}
-                  {cached?.topic ? (
-                    <View style={[styles.infoRow, (cached?.area || cached?.property_type) ? styles.infoRowBorder : undefined]}>
-                      <Text style={styles.infoLabel}>Topic</Text>
-                      <Text style={styles.infoValue} numberOfLines={2}>{(cached.topic as any).title}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -357,41 +345,6 @@ function InquiryDetailScreen({
               </TouchableOpacity>
             </View>
 
-            {/* Response */}
-            <Text style={styles.sectionLabel}>RESPONSE</Text>
-            <View style={styles.responseWrap}>
-              <TextInput
-                style={styles.responseInput}
-                value={response}
-                onChangeText={setResponse}
-                placeholder="Add a response to the learner…"
-                placeholderTextColor="#9a9aa5"
-                multiline
-                textAlignVertical="top"
-              />
-              <TouchableOpacity
-                style={[styles.responseSendBtn, (!response.trim() || statusMutation.isPending) && { opacity: 0.4 }]}
-                onPress={handleSaveResponse}
-                disabled={!response.trim() || statusMutation.isPending}
-                activeOpacity={0.8}
-              >
-                {statusMutation.isPending
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.responseSendText}>Save response</Text>}
-              </TouchableOpacity>
-            </View>
-
-            {/* Existing response */}
-            {cached?.response && !response ? (
-              <View style={styles.existingResponse}>
-                <Text style={styles.existingResponseLabel}>Current response</Text>
-                <Text style={styles.existingResponseText}>{cached.response}</Text>
-                {cached.responded_at ? (
-                  <Text style={styles.existingResponseTime}>{fmtDateTime(cached.responded_at)}</Text>
-                ) : null}
-              </View>
-            ) : null}
-
             {/* Meta */}
             <Text style={styles.sectionLabel}>META</Text>
             <View style={styles.infoCard}>
@@ -411,7 +364,7 @@ function InquiryDetailScreen({
       <StatusPickerModal
         visible={statusPickerVisible}
         current={cached?.status ?? ''}
-        onSelect={(s) => statusMutation.mutate({ status: s })}
+        onSelect={(s) => statusMutation.mutate(s)}
         onClose={() => setStatusPickerVisible(false)}
       />
     </Modal>
@@ -439,6 +392,7 @@ export default function ManagerInquiriesScreen() {
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update status.'),
   });
 
+
   const statusCounts = useMemo(() => {
     const c: Record<string, number> = { all: inquiries.length };
     for (const inq of inquiries) c[inq.status] = (c[inq.status] ?? 0) + 1;
@@ -453,8 +407,9 @@ export default function ManagerInquiriesScreen() {
       .filter((i) => !from || new Date(i.created_at) >= from)
       .filter((i) => !q ||
         i.description.toLowerCase().includes(q) ||
-        i.user?.full_name?.toLowerCase().includes(q) ||
-        i.user?.email?.toLowerCase().includes(q) ||
+        i.learner?.full_name?.toLowerCase().includes(q) ||
+        i.learner?.email?.toLowerCase().includes(q) ||
+        i.email?.toLowerCase().includes(q) ||
         i.area?.name?.toLowerCase().includes(q)
       );
   }, [inquiries, statusFilter, period, search]);
@@ -630,13 +585,4 @@ const styles = StyleSheet.create({
   statusDropdownFull: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   statusDropdownFullText: { fontSize: 15, fontWeight: '500', color: '#1d1d1f' },
 
-  responseWrap:    { marginHorizontal: 16, backgroundColor: '#ffffff', borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7', padding: 14, gap: 10 },
-  responseInput:   { fontSize: 14, color: '#1d1d1f', minHeight: 80, textAlignVertical: 'top' },
-  responseSendBtn: { backgroundColor: '#0071e3', borderRadius: 20, paddingVertical: 10, alignItems: 'center' },
-  responseSendText:{ fontSize: 14, fontWeight: '600', color: '#ffffff' },
-
-  existingResponse:     { marginHorizontal: 16, marginTop: 8, backgroundColor: '#f0f5ff', borderRadius: 12, padding: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: '#bcd0f7' },
-  existingResponseLabel:{ fontSize: 11, fontWeight: '600', color: '#0071e3', marginBottom: 6 },
-  existingResponseText: { fontSize: 14, color: '#1d1d1f', lineHeight: 20 },
-  existingResponseTime: { fontSize: 12, color: '#6e6e73', marginTop: 6 },
 });

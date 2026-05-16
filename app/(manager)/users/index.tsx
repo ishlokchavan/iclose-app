@@ -39,6 +39,35 @@ const { width: SCREEN_W } = Dimensions.get('window');
 
 type UserTab = 'learners' | 'staff' | 'admin';
 type DetailMode = 'view' | 'edit';
+type Period = 'all' | 'today' | 'week' | 'month' | '3months';
+
+const PERIOD_OPTIONS: { label: string; value: Period }[] = [
+  { label: 'All time',    value: 'all' },
+  { label: 'Today',       value: 'today' },
+  { label: 'This week',   value: 'week' },
+  { label: 'This month',  value: 'month' },
+  { label: 'Last 3 mo',  value: '3months' },
+];
+
+function periodStart(period: Period): Date | null {
+  const now = new Date();
+  if (period === 'today') {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  if (period === 'week') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 6);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  if (period === 'month') {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  if (period === '3months') {
+    return new Date(now.getFullYear(), now.getMonth() - 3, 1);
+  }
+  return null;
+}
 
 const TAB_CONFIG: { label: string; value: UserTab; roles: UserRole[] }[] = [
   { label: 'Learners', value: 'learners', roles: ['learner'] },
@@ -487,6 +516,7 @@ export default function UsersScreen() {
 
   const [activeTab,     setActiveTab]     = useState<UserTab>('learners');
   const [search,        setSearch]        = useState('');
+  const [period,        setPeriod]        = useState<Period>('all');
   const [selectedUser,  setSelectedUser]  = useState<Profile | null>(null);
   const [inviteVisible, setInviteVisible] = useState(false);
 
@@ -508,20 +538,20 @@ export default function UsersScreen() {
   const filtered = useMemo(() => {
     const roles = TAB_CONFIG.find((t) => t.value === activeTab)?.roles ?? [];
     const q = search.trim().toLowerCase();
+    const from = periodStart(period);
     return allProfiles
       .filter((p) => roles.includes(p.role))
-      .filter((p) => !q || p.full_name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q));
-  }, [allProfiles, activeTab, search]);
+      .filter((p) => !q || p.full_name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q))
+      .filter((p) => !from || new Date(p.created_at) >= from);
+  }, [allProfiles, activeTab, search, period]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1, marginRight: 12 }}>
           <Text style={styles.title}>Users</Text>
-          <Text style={styles.subtitle}>
-            {allProfiles.length} member{allProfiles.length !== 1 ? 's' : ''}
-          </Text>
+          <Text style={styles.subtitle}>Manage accounts, roles, and team members.</Text>
         </View>
         {canEditContact ? (
           <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteVisible(true)} activeOpacity={0.8}>
@@ -550,6 +580,29 @@ export default function UsersScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* Period filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.periodRow}
+      >
+        {PERIOD_OPTIONS.map((opt) => {
+          const active = period === opt.value;
+          return (
+            <TouchableOpacity
+              key={opt.value}
+              onPress={() => setPeriod(opt.value)}
+              style={[styles.periodChip, active && styles.periodChipActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.periodChipText, active && styles.periodChipTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
       {/* Tabs */}
       <View style={styles.tabBar}>
@@ -643,6 +696,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
   searchInput: { flex: 1, fontSize: 15, color: '#1d1d1f', marginLeft: 8 },
+
+  periodRow: {
+    paddingHorizontal: 16, paddingBottom: 10, gap: 8, flexDirection: 'row',
+  },
+  periodChip: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 20, backgroundColor: '#ffffff',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+  },
+  periodChipActive: { backgroundColor: '#0071e3', borderColor: '#0071e3' },
+  periodChipText:       { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
+  periodChipTextActive: { color: '#ffffff', fontWeight: '600' },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 10,

@@ -204,7 +204,7 @@ export default function NewTopicScreen() {
               title="Select Area"
               options={areaOptions}
               value={selectedAreaId}
-              onChange={(val) => { setSelectedAreaId(val); setSelectedTypeId(null); setSelectedSubtypeIds([]); }}
+              onChange={setSelectedAreaId}
               placeholder="No area selected"
               noneLabel="No area"
               searchable
@@ -225,12 +225,12 @@ export default function NewTopicScreen() {
               />
             </View>
 
-            {/* Property Type */}
+            {/* Type */}
             {typeOptions.length > 0 ? (
               <View style={styles.pickerSection}>
-                <Text style={styles.pickerLabel}>Property Type</Text>
+                <Text style={styles.pickerLabel}>Type</Text>
                 <SelectModal
-                  title="Select Property Type"
+                  title="Select Type"
                   options={typeOptions}
                   value={selectedTypeId}
                   onChange={(val) => { setSelectedTypeId(val); setSelectedSubtypeIds([]); }}

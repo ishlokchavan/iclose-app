@@ -13,14 +13,24 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchHireApplications, updateHireStatus } from '../../../lib/supabase/queries/hires';
+import {
+  fetchHireApplications,
+  updateHireStatus,
+  fetchHireRemarks,
+  addHireRemark,
+  getResumeSignedUrl,
+} from '../../../lib/supabase/queries/hires';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Spinner } from '../../../components/ui/Spinner';
-import type { HireApplication } from '../../../types/database';
+import { useAuth } from '../../../lib/auth/context';
+import type { HireApplication, HireRemark } from '../../../types/database';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -35,6 +45,8 @@ const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'Hired',       value: 'hired' },
   { label: 'Rejected',    value: 'rejected' },
 ];
+
+const ALL_STATUSES = ['pending', 'reviewing', 'shortlisted', 'hired', 'rejected'];
 
 const PERIOD_OPTIONS: { label: string; value: Period }[] = [
   { label: 'All time',   value: 'all' },
@@ -55,12 +67,8 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
 
 function periodStart(period: Period): Date | null {
   const now = new Date();
-  if (period === 'today') {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  }
-  if (period === 'week') {
-    const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); return d;
-  }
+  if (period === 'today') return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (period === 'week') { const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0); return d; }
   if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
   if (period === '3months') return new Date(now.getFullYear(), now.getMonth() - 3, 1);
   return null;
@@ -72,43 +80,41 @@ function fmtDate(iso: string) {
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return fmtDate(iso);
 }
 
 function initials(first: string, last: string) {
   return ((first?.[0] ?? '') + (last?.[0] ?? '')).toUpperCase() || '?';
 }
 
-// ─── Period picker modal ────────────────────────────────────────────────────
+// ─── Period picker ────────────────────────────────────────────────────────────
 
-function PeriodPicker({
-  value, onChange,
-}: { value: Period; onChange: (v: Period) => void }) {
+function PeriodPicker({ value, onChange }: { value: Period; onChange: (v: Period) => void }) {
   const [open, setOpen] = useState(false);
   const label = PERIOD_OPTIONS.find((o) => o.value === value)?.label ?? 'All time';
-
   return (
     <>
       <TouchableOpacity style={styles.periodBtn} onPress={() => setOpen(true)} activeOpacity={0.8}>
         <Text style={styles.periodBtnText}>{label}</Text>
         <Ionicons name="chevron-down" size={14} color="#6e6e73" />
       </TouchableOpacity>
-
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={() => setOpen(false)}>
           <View style={styles.pickerCard}>
             {PERIOD_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={styles.pickerItem}
-                onPress={() => { onChange(opt.value); setOpen(false); }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pickerItemText, value === opt.value && styles.pickerItemActive]}>
-                  {opt.label}
-                </Text>
+              <TouchableOpacity key={opt.value} style={styles.pickerItem}
+                onPress={() => { onChange(opt.value); setOpen(false); }} activeOpacity={0.7}>
+                <Text style={[styles.pickerItemText, value === opt.value && styles.pickerItemActive]}>{opt.label}</Text>
                 {value === opt.value ? <Ionicons name="checkmark" size={16} color="#0071e3" /> : null}
               </TouchableOpacity>
             ))}
@@ -119,7 +125,7 @@ function PeriodPicker({
   );
 }
 
-// ─── Applicant row ──────────────────────────────────────────────────────────
+// ─── Applicant row ────────────────────────────────────────────────────────────
 
 function ApplicantRow({ item, onPress }: { item: HireApplication; onPress: () => void }) {
   const cfg = STATUS_CONFIG[item.status] ?? { color: '#9a9aa5', label: item.status };
@@ -144,24 +150,113 @@ function ApplicantRow({ item, onPress }: { item: HireApplication; onPress: () =>
   );
 }
 
-// ─── Detail screen ──────────────────────────────────────────────────────────
+// ─── Remark item ──────────────────────────────────────────────────────────────
 
-function DetailRow({ label, value, isLast }: { label: string; value: string; isLast?: boolean }) {
+function RemarkItem({ remark }: { remark: HireRemark }) {
+  const initl = (remark.created_by_name ?? '?')[0]?.toUpperCase() ?? '?';
   return (
-    <View style={[styles.detailRow, !isLast && styles.detailRowBorder]}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={3}>{value}</Text>
+    <View style={styles.remarkItem}>
+      <View style={styles.remarkAvatar}>
+        <Text style={styles.remarkAvatarText}>{initl}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.remarkHeader}>
+          <Text style={styles.remarkAuthor}>{remark.created_by_name ?? 'Unknown'}</Text>
+          <Text style={styles.remarkTime}>{timeAgo(remark.created_at)}</Text>
+        </View>
+        <Text style={styles.remarkContent}>{remark.content}</Text>
+      </View>
     </View>
   );
 }
 
-const NEXT_STATUSES: Record<string, string[]> = {
-  pending:     ['reviewing', 'rejected'],
-  reviewing:   ['shortlisted', 'rejected'],
-  shortlisted: ['hired', 'rejected'],
-  hired:       [],
-  rejected:    ['reviewing'],
-};
+// ─── Status picker modal ──────────────────────────────────────────────────────
+
+function StatusPickerModal({
+  visible, current, onSelect, onClose,
+}: {
+  visible: boolean;
+  current: string;
+  onSelect: (s: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={onClose}>
+        <View style={styles.pickerCard}>
+          <Text style={styles.pickerTitle}>Update status</Text>
+          {ALL_STATUSES.map((s) => {
+            const cfg = STATUS_CONFIG[s];
+            const isCurrent = s === current;
+            return (
+              <TouchableOpacity key={s} style={styles.pickerItem}
+                onPress={() => { onSelect(s); onClose(); }} activeOpacity={0.7} disabled={isCurrent}>
+                <View style={styles.statusPickerRow}>
+                  <View style={[styles.statusDot, { backgroundColor: cfg.color, width: 9, height: 9 }]} />
+                  <Text style={[styles.pickerItemText, { color: isCurrent ? '#9a9aa5' : '#1d1d1f' }]}>
+                    {cfg.label}
+                  </Text>
+                </View>
+                {isCurrent ? <Text style={styles.currentLabel}>current</Text> : null}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ─── Reject remark modal ──────────────────────────────────────────────────────
+
+function RejectRemarkModal({
+  visible, onConfirm, onClose,
+}: {
+  visible: boolean;
+  onConfirm: (remark: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState('');
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.pickerBackdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.pickerCard, { padding: 20 }]}>
+          <Text style={styles.pickerTitle}>Remark required</Text>
+          <Text style={styles.rejectNote}>
+            A remark is required when rejecting an applicant.
+          </Text>
+          <TextInput
+            style={styles.rejectInput}
+            value={text}
+            onChangeText={setText}
+            placeholder="Add a remark…"
+            placeholderTextColor="#9a9aa5"
+            multiline
+            autoFocus
+          />
+          <View style={styles.rejectActions}>
+            <TouchableOpacity style={styles.rejectCancelBtn} onPress={() => { setText(''); onClose(); }} activeOpacity={0.7}>
+              <Text style={styles.rejectCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rejectConfirmBtn, !text.trim() && { opacity: 0.4 }]}
+              onPress={() => { if (text.trim()) { onConfirm(text.trim()); setText(''); } }}
+              disabled={!text.trim()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.rejectConfirmText}>Reject</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─── Detail screen ────────────────────────────────────────────────────────────
 
 function HireDetailScreen({
   item,
@@ -170,43 +265,90 @@ function HireDetailScreen({
   item: HireApplication | null;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const translateX = useRef(new Animated.Value(SCREEN_W)).current;
+
   const [cached, setCached] = useState<HireApplication | null>(null);
+  const [remarkText, setRemarkText] = useState('');
+  const [statusPickerVisible, setStatusPickerVisible] = useState(false);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [resumeUrl, setResumeUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (item) {
       setCached(item);
+      setRemarkText('');
+      setResumeUrl(null);
       translateX.setValue(SCREEN_W);
       Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
+      if (item.resume_path) {
+        getResumeSignedUrl(item.resume_path).then(setResumeUrl);
+      }
     }
   }, [item?.id]);
 
   const handleClose = () => {
-    Animated.timing(translateX, { toValue: SCREEN_W, duration: 220, useNativeDriver: true }).start(() => onClose());
+    Animated.timing(translateX, { toValue: SCREEN_W, duration: 220, useNativeDriver: true })
+      .start(() => onClose());
   };
 
+  // Remarks
+  const { data: remarks = [], isLoading: remarksLoading } = useQuery({
+    queryKey: ['hireRemarks', cached?.id],
+    queryFn: () => fetchHireRemarks(cached!.id),
+    enabled: !!cached,
+    staleTime: 30000,
+  });
+
+  const addRemarkMutation = useMutation({
+    mutationFn: (content: string) =>
+      addHireRemark(cached!.id, content, user!.id, user?.user_metadata?.full_name ?? user?.email ?? 'Unknown'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hireRemarks', cached?.id] });
+      setRemarkText('');
+    },
+    onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to add remark.'),
+  });
+
   const statusMutation = useMutation({
-    mutationFn: (newStatus: string) => updateHireStatus(cached!.id, cached!.kind, newStatus),
-    onSuccess: (_, newStatus) => {
+    mutationFn: async ({ status, remark }: { status: string; remark?: string }) => {
+      await updateHireStatus(cached!.id, cached!.kind, status);
+      if (remark) {
+        await addHireRemark(
+          cached!.id, remark,
+          user!.id, user?.user_metadata?.full_name ?? user?.email ?? 'Unknown',
+        );
+      }
+    },
+    onSuccess: (_, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['hireApplications'] });
-      setCached((prev) => prev ? { ...prev, status: newStatus } : prev);
+      queryClient.invalidateQueries({ queryKey: ['hireRemarks', cached?.id] });
+      setCached((prev) => prev ? { ...prev, status } : prev);
     },
     onError: (err: any) => Alert.alert('Error', err?.message ?? 'Failed to update status.'),
   });
 
-  const cfg = cached ? (STATUS_CONFIG[cached.status] ?? { color: '#9a9aa5', label: cached.status }) : null;
-  const nextStatuses = cached ? (NEXT_STATUSES[cached.status] ?? []) : [];
-
-  const handleStatusChange = (newStatus: string) => {
-    const label = STATUS_CONFIG[newStatus]?.label ?? newStatus;
-    Alert.alert('Update status', `Move to "${label}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', onPress: () => statusMutation.mutate(newStatus) },
-    ]);
+  const handleStatusSelect = (s: string) => {
+    if (s === 'rejected') {
+      setPendingStatus(s);
+      setRejectModalVisible(true);
+    } else {
+      statusMutation.mutate({ status: s });
+    }
   };
 
+  const handleRejectConfirm = (remark: string) => {
+    setRejectModalVisible(false);
+    if (pendingStatus) {
+      statusMutation.mutate({ status: pendingStatus, remark });
+      setPendingStatus(null);
+    }
+  };
+
+  const cfg = cached ? (STATUS_CONFIG[cached.status] ?? { color: '#9a9aa5', label: cached.status }) : null;
   const name = cached ? `${cached.first_name} ${cached.last_name}`.trim() || 'Unknown' : '';
 
   return (
@@ -222,90 +364,203 @@ function HireDetailScreen({
           <View style={{ width: 72 }} />
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={insets.top + 50}
         >
-          {/* Identity */}
-          <View style={styles.detailIdentity}>
-            <View style={styles.detailAvatar}>
-              <Text style={styles.detailAvatarText}>
-                {cached ? initials(cached.first_name, cached.last_name) : ''}
-              </Text>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+          >
+            {/* Identity */}
+            <View style={styles.detailIdentity}>
+              <View style={styles.detailAvatar}>
+                <Text style={styles.detailAvatarText}>
+                  {cached ? initials(cached.first_name, cached.last_name) : ''}
+                </Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: 14 }}>
+                <Text style={styles.detailName}>{name}</Text>
+                <Text style={styles.detailEmail}>{cached?.email ?? ''}</Text>
+                {cfg ? (
+                  <View style={[styles.statusPill, { borderColor: cfg.color }]}>
+                    <Text style={[styles.statusPillText, { color: cfg.color }]}>{cfg.label}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.kindTag}>
+                <Text style={styles.kindTagText}>
+                  {cached?.kind === 'intern' ? 'Intern' : 'Specialist'}
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={styles.detailName}>{name}</Text>
-              <Text style={styles.detailEmail}>{cached?.email ?? ''}</Text>
-              {cfg ? (
-                <View style={[styles.statusPill, { backgroundColor: cfg.color + '18' }]}>
-                  <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
-                  <Text style={[styles.statusPillText, { color: cfg.color }]}>{cfg.label}</Text>
+
+            {/* Contact */}
+            <Text style={styles.sectionLabel}>CONTACT</Text>
+            <View style={styles.card}>
+              {cached?.phone ? (
+                <TouchableOpacity
+                  style={[styles.detailRow, styles.detailRowBorder]}
+                  onPress={() => Linking.openURL(`tel:${cached.phone}`)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailLabel}>Phone</Text>
+                  <View style={styles.linkRow}>
+                    <Ionicons name="call-outline" size={14} color="#0071e3" />
+                    <Text style={styles.linkText}>{cached.phone}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {cached?.email ? (
+                <TouchableOpacity
+                  style={styles.detailRow}
+                  onPress={() => Linking.openURL(`mailto:${cached.email}`)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.detailLabel}>Email</Text>
+                  <View style={styles.linkRow}>
+                    <Ionicons name="mail-outline" size={14} color="#0071e3" />
+                    <Text style={styles.linkText}>{cached.email}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Application */}
+            <Text style={styles.sectionLabel}>APPLICATION</Text>
+            <View style={styles.card}>
+              {cached?.kind === 'intern' && (
+                <View style={[styles.detailRow, styles.detailRowBorder]}>
+                  <Text style={styles.detailLabel}>Resume</Text>
+                  {resumeUrl ? (
+                    <TouchableOpacity
+                      style={styles.pdfBtn}
+                      onPress={() => Linking.openURL(resumeUrl!)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="document-outline" size={14} color="#0071e3" />
+                      <Text style={styles.pdfBtnText}>View PDF</Text>
+                      <Ionicons name="open-outline" size={12} color="#0071e3" />
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={styles.detailValue}>
+                      {cached?.resume_path ? 'Loading…' : '—'}
+                    </Text>
+                  )}
+                </View>
+              )}
+              {cached?.message ? (
+                <View style={styles.coverNoteWrap}>
+                  <Text style={styles.coverNoteLabel}>Cover note</Text>
+                  <Text style={styles.coverNoteText}>{cached.message}</Text>
+                </View>
+              ) : null}
+              {!cached?.message && !(cached?.kind === 'intern') ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailValue}>No message provided.</Text>
                 </View>
               ) : null}
             </View>
-            <View style={styles.kindTag}>
-              <Text style={styles.kindTagText}>
-                {cached?.kind === 'intern' ? 'Intern' : 'Specialist'}
-              </Text>
+
+            {/* Status */}
+            <Text style={styles.sectionLabel}>STATUS</Text>
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.statusDropdown}
+                onPress={() => setStatusPickerVisible(true)}
+                activeOpacity={0.8}
+                disabled={statusMutation.isPending}
+              >
+                {statusMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#6e6e73" />
+                ) : (
+                  <>
+                    <Text style={styles.statusDropdownText}>
+                      {cfg?.label ?? cached?.status ?? ''}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#6e6e73" />
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Contact */}
-          <Text style={styles.sectionLabel}>CONTACT</Text>
-          <View style={styles.card}>
-            <DetailRow label="Email"  value={cached?.email ?? '—'} />
-            <DetailRow label="Phone"  value={cached?.phone ?? '—'} />
-            {cached?.kind === 'intern' && cached.instagram ? (
-              <DetailRow label="Instagram" value={cached.instagram} />
-            ) : null}
-            <DetailRow label="Applied" value={cached ? fmtDateTime(cached.created_at) : '—'} isLast />
-          </View>
-
-          {/* Message */}
-          {cached?.message ? (
-            <>
-              <Text style={styles.sectionLabel}>MESSAGE</Text>
-              <View style={styles.card}>
-                <View style={{ padding: 16 }}>
-                  <Text style={{ fontSize: 14, color: '#1d1d1f', lineHeight: 20 }}>{cached.message}</Text>
+            {/* Remarks */}
+            <View style={styles.remarksSectionHeader}>
+              <Text style={styles.sectionLabel}>REMARKS</Text>
+              {remarks.length > 0 ? (
+                <View style={styles.remarksBadge}>
+                  <Text style={styles.remarksBadgeText}>{remarks.length}</Text>
                 </View>
-              </View>
-            </>
-          ) : null}
+              ) : null}
+            </View>
 
-          {/* Status actions */}
-          {nextStatuses.length > 0 ? (
-            <>
-              <Text style={styles.sectionLabel}>UPDATE STATUS</Text>
-              <View style={styles.statusActions}>
-                {nextStatuses.map((s) => {
-                  const scfg = STATUS_CONFIG[s] ?? { color: '#6e6e73', label: s };
-                  return (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.statusActionBtn, { borderColor: scfg.color }]}
-                      onPress={() => handleStatusChange(s)}
-                      disabled={statusMutation.isPending}
-                      activeOpacity={0.8}
-                    >
-                      {statusMutation.isPending
-                        ? <ActivityIndicator size="small" color={scfg.color} />
-                        : <Text style={[styles.statusActionText, { color: scfg.color }]}>
-                            Move to {scfg.label}
-                          </Text>}
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* Add remark */}
+            <View style={styles.remarkInputWrap}>
+              <TextInput
+                style={styles.remarkInput}
+                value={remarkText}
+                onChangeText={setRemarkText}
+                placeholder="Add a remark…"
+                placeholderTextColor="#9a9aa5"
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.remarkSendBtn, !remarkText.trim() && { opacity: 0.3 }]}
+                onPress={() => { if (remarkText.trim()) addRemarkMutation.mutate(remarkText.trim()); }}
+                disabled={!remarkText.trim() || addRemarkMutation.isPending}
+                activeOpacity={0.7}
+              >
+                {addRemarkMutation.isPending
+                  ? <ActivityIndicator size="small" color="#0071e3" />
+                  : <Ionicons name="send-outline" size={18} color="#0071e3" />}
+              </TouchableOpacity>
+            </View>
+
+            {/* Remark list */}
+            {remarksLoading ? (
+              <ActivityIndicator color="#0071e3" style={{ marginTop: 12 }} />
+            ) : remarks.length > 0 ? (
+              <View style={styles.remarkList}>
+                {remarks.map((r) => <RemarkItem key={r.id} remark={r} />)}
               </View>
-            </>
-          ) : null}
-        </ScrollView>
+            ) : null}
+
+            {/* Meta */}
+            <Text style={styles.sectionLabel}>META</Text>
+            <View style={styles.card}>
+              <View style={[styles.detailRow, styles.detailRowBorder]}>
+                <Text style={styles.detailLabel}>Applied</Text>
+                <Text style={styles.detailValue}>{cached ? fmtDateTime(cached.created_at) : '—'}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Source</Text>
+                <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                  {cached?.referer ?? '—'}
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Animated.View>
+
+      <StatusPickerModal
+        visible={statusPickerVisible}
+        current={cached?.status ?? ''}
+        onSelect={handleStatusSelect}
+        onClose={() => setStatusPickerVisible(false)}
+      />
+      <RejectRemarkModal
+        visible={rejectModalVisible}
+        onConfirm={handleRejectConfirm}
+        onClose={() => { setRejectModalVisible(false); setPendingStatus(null); }}
+      />
     </Modal>
   );
 }
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function HiresScreen() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -389,7 +644,7 @@ export default function HiresScreen() {
               activeOpacity={0.7}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{sf.label}</Text>
-              {count > 0 || sf.value === 'all' ? (
+              {(count > 0 || sf.value === 'all') ? (
                 <View style={[styles.chipBadge, active && styles.chipBadgeActive]}>
                   <Text style={[styles.chipBadgeText, active && styles.chipBadgeTextActive]}>
                     {sf.value === 'all' ? statusCounts.all : count}
@@ -427,13 +682,9 @@ export default function HiresScreen() {
               </Text>
             </View>
           }
-          renderItem={({ item, index }) => (
-            <ApplicantRow
-              item={item}
-              onPress={() => setSelected(item)}
-            />
+          renderItem={({ item }) => (
+            <ApplicantRow item={item} onPress={() => setSelected(item)} />
           )}
-          style={styles.listCard}
         />
       )}
 
@@ -448,8 +699,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#f5f5f7' },
 
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  eyebrow: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.8, marginBottom: 2 },
-  title:   { fontSize: 28, fontWeight: '700', color: '#1d1d1f' },
+  eyebrow:  { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.8, marginBottom: 2 },
+  title:    { fontSize: 28, fontWeight: '700', color: '#1d1d1f' },
   subtitle: { fontSize: 13, color: '#6e6e73', marginTop: 3, lineHeight: 18 },
 
   searchRow: {
@@ -477,8 +728,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 32,
   },
   pickerCard: {
-    backgroundColor: '#ffffff', borderRadius: 16, width: '100%', maxWidth: 300,
-    overflow: 'hidden', paddingVertical: 4,
+    backgroundColor: '#ffffff', borderRadius: 16,
+    width: '100%', maxWidth: 320, overflow: 'hidden', paddingVertical: 4,
+  },
+  pickerTitle: {
+    fontSize: 13, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.5,
+    paddingHorizontal: 20, paddingTop: 14, paddingBottom: 8,
   },
   pickerItem: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -487,43 +742,37 @@ const styles = StyleSheet.create({
   },
   pickerItemText:   { fontSize: 15, color: '#1d1d1f' },
   pickerItemActive: { color: '#0071e3', fontWeight: '600' },
+  currentLabel: { fontSize: 11, color: '#9a9aa5' },
+  statusPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
   chipsScroll: { flexGrow: 0, flexShrink: 0, height: 44 },
-  chipsRow: {
-    paddingHorizontal: 16, gap: 8,
-    flexDirection: 'row', alignItems: 'center',
-  },
+  chipsRow: { paddingHorizontal: 16, gap: 8, flexDirection: 'row', alignItems: 'center' },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 6,
     borderRadius: 20, backgroundColor: '#ffffff',
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
-  chipActive:         { backgroundColor: '#1d1d1f', borderColor: '#1d1d1f' },
-  chipText:           { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
-  chipTextActive:     { color: '#ffffff', fontWeight: '600' },
-  chipBadge:          { backgroundColor: '#ebebed', borderRadius: 10, paddingHorizontal: 5, minWidth: 18, alignItems: 'center' },
-  chipBadgeActive:    { backgroundColor: 'rgba(255,255,255,0.25)' },
-  chipBadgeText:      { fontSize: 11, fontWeight: '600', color: '#6e6e73' },
-  chipBadgeTextActive:{ color: '#ffffff' },
+  chipActive:          { backgroundColor: '#1d1d1f', borderColor: '#1d1d1f' },
+  chipText:            { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
+  chipTextActive:      { color: '#ffffff', fontWeight: '600' },
+  chipBadge:           { backgroundColor: '#ebebed', borderRadius: 10, paddingHorizontal: 5, minWidth: 18, alignItems: 'center' },
+  chipBadgeActive:     { backgroundColor: 'rgba(255,255,255,0.25)' },
+  chipBadgeText:       { fontSize: 11, fontWeight: '600', color: '#6e6e73' },
+  chipBadgeTextActive: { color: '#ffffff' },
 
   list:           { paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 32 },
-  listCard:       { marginHorizontal: 0 },
   listCardHeader: {
-    backgroundColor: '#f5f5f7',
-    paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#f5f5f7', paddingHorizontal: 16, paddingVertical: 8,
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
-    borderBottomWidth: 0,
-    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7', borderBottomWidth: 0,
+    marginHorizontal: 0,
   },
   listCardHeaderText: { fontSize: 11, fontWeight: '600', color: '#9a9aa5', letterSpacing: 0.6 },
   listCardFooter: {
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
-    borderTopWidth: 0,
-    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7', borderTopWidth: 0,
     backgroundColor: '#ffffff',
   },
   listCardFooterText: { fontSize: 13, color: '#9a9aa5' },
@@ -532,22 +781,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 16,
     backgroundColor: '#ffffff',
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
-    borderTopWidth: 0,
-    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7', borderTopWidth: 0,
   },
   rowAvatar: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: '#ebebed', alignItems: 'center', justifyContent: 'center',
   },
   rowAvatarText: { fontSize: 14, fontWeight: '700', color: '#6e6e73' },
-  rowBody:  { flex: 1, marginLeft: 12 },
-  rowName:  { fontSize: 15, fontWeight: '600', color: '#1d1d1f' },
-  rowMeta:  { flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  rowStatus: { fontSize: 12, fontWeight: '500' },
-  rowDot:   { fontSize: 12, color: '#9a9aa5' },
-  rowDate:  { fontSize: 12, color: '#9a9aa5' },
+  rowBody:       { flex: 1, marginLeft: 12 },
+  rowName:       { fontSize: 15, fontWeight: '600', color: '#1d1d1f' },
+  rowMeta:       { flexDirection: 'row', alignItems: 'center', marginTop: 3, gap: 5 },
+  statusDot:     { width: 7, height: 7, borderRadius: 4 },
+  rowStatus:     { fontSize: 12, fontWeight: '500' },
+  rowDot:        { fontSize: 12, color: '#9a9aa5' },
+  rowDate:       { fontSize: 12, color: '#9a9aa5' },
 
   // ── Detail screen ──
   detailScreen: { ...StyleSheet.absoluteFillObject, backgroundColor: '#f5f5f7' },
@@ -572,20 +819,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#ebebed', alignItems: 'center', justifyContent: 'center',
   },
   detailAvatarText: { fontSize: 18, fontWeight: '700', color: '#6e6e73' },
-  detailName:  { fontSize: 18, fontWeight: '700', color: '#1d1d1f' },
-  detailEmail: { fontSize: 13, color: '#6e6e73', marginTop: 2 },
-
+  detailName:       { fontSize: 18, fontWeight: '700', color: '#1d1d1f' },
+  detailEmail:      { fontSize: 13, color: '#6e6e73', marginTop: 2 },
   statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
     alignSelf: 'flex-start', borderRadius: 12,
-    paddingHorizontal: 8, paddingVertical: 3, marginTop: 6,
+    borderWidth: 1.5,
+    paddingHorizontal: 10, paddingVertical: 3, marginTop: 6,
   },
   statusPillText: { fontSize: 12, fontWeight: '600' },
-
-  kindTag: {
-    backgroundColor: '#e8f1fb', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start',
-  },
+  kindTag:     { backgroundColor: '#e8f1fb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
   kindTagText: { fontSize: 11, fontWeight: '600', color: '#0071e3' },
 
   sectionLabel: {
@@ -598,17 +840,65 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
   detailRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: 16, paddingVertical: 11,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 13,
   },
   detailRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#d2d2d7' },
   detailLabel: { fontSize: 14, color: '#6e6e73', flexShrink: 0, marginRight: 8 },
-  detailValue: { fontSize: 14, color: '#1d1d1f', fontWeight: '500', textAlign: 'right', flex: 1 },
+  detailValue: { fontSize: 14, color: '#1d1d1f', fontWeight: '500' },
 
-  statusActions: { paddingHorizontal: 16, gap: 8 },
-  statusActionBtn: {
-    borderRadius: 12, borderWidth: 1.5,
-    paddingVertical: 13, alignItems: 'center',
+  linkRow:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  linkText: { fontSize: 14, color: '#0071e3', fontWeight: '500' },
+
+  pdfBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#e8f1fb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  pdfBtnText: { fontSize: 13, color: '#0071e3', fontWeight: '600' },
+
+  coverNoteWrap:  { padding: 16 },
+  coverNoteLabel: { fontSize: 12, fontWeight: '600', color: '#9a9aa5', marginBottom: 6 },
+  coverNoteText:  { fontSize: 14, color: '#1d1d1f', lineHeight: 21 },
+
+  statusDropdown: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
   },
-  statusActionText: { fontSize: 15, fontWeight: '600' },
+  statusDropdownText: { fontSize: 15, fontWeight: '500', color: '#1d1d1f' },
+
+  remarksSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  remarksBadge:         { backgroundColor: '#ebebed', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+  remarksBadgeText:     { fontSize: 11, fontWeight: '600', color: '#6e6e73' },
+
+  remarkInputWrap: {
+    marginHorizontal: 16, flexDirection: 'row', alignItems: 'flex-end',
+    backgroundColor: '#ffffff', borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+    paddingHorizontal: 14, paddingVertical: 10, gap: 8,
+  },
+  remarkInput:   { flex: 1, fontSize: 14, color: '#1d1d1f', maxHeight: 80 },
+  remarkSendBtn: { paddingBottom: 2 },
+
+  remarkList: { marginHorizontal: 16, marginTop: 8, gap: 1 },
+  remarkItem: {
+    flexDirection: 'row', gap: 12,
+    backgroundColor: '#ffffff', padding: 14,
+    borderRadius: 12, marginBottom: 6,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+  },
+  remarkAvatar:     { width: 32, height: 32, borderRadius: 16, backgroundColor: '#ebebed', alignItems: 'center', justifyContent: 'center' },
+  remarkAvatarText: { fontSize: 13, fontWeight: '700', color: '#6e6e73' },
+  remarkHeader:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  remarkAuthor:     { fontSize: 13, fontWeight: '600', color: '#1d1d1f' },
+  remarkTime:       { fontSize: 12, color: '#9a9aa5' },
+  remarkContent:    { fontSize: 14, color: '#3d3d42', lineHeight: 20 },
+
+  rejectNote:       { fontSize: 14, color: '#6e6e73', marginBottom: 14, lineHeight: 20 },
+  rejectInput:      {
+    borderWidth: 1.5, borderColor: '#d2d2d7', borderRadius: 10,
+    padding: 12, fontSize: 15, color: '#1d1d1f', minHeight: 80,
+    textAlignVertical: 'top', marginBottom: 16,
+  },
+  rejectActions:    { flexDirection: 'row', gap: 10 },
+  rejectCancelBtn:  { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#ebebed', alignItems: 'center' },
+  rejectCancelText: { fontSize: 15, fontWeight: '500', color: '#6e6e73' },
+  rejectConfirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#b81c3a', alignItems: 'center' },
+  rejectConfirmText:{ fontSize: 15, fontWeight: '600', color: '#ffffff' },
 });

@@ -43,9 +43,19 @@ export interface HireApplication {
   message: string | null;
   status: string;
   created_at: string;
+  referer?: string | null;
   // intern-only
   instagram?: string | null;
   resume_path?: string | null;
+}
+
+export interface HireRemark {
+  id: string;
+  application_id: string;
+  content: string;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
 }
 
 export interface Area {

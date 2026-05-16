@@ -106,11 +106,8 @@ export function VideoPlayer({ videoId, thumbnailUrl }: VideoPlayerProps) {
           mediaPlaybackRequiresUserAction: false,
           injectedJavaScript: HIDE_BRANDING_JS,
           javaScriptEnabled: true,
-          // Disguise the user agent so the request looks like a browser, not a WebView
-          applicationNameForUserAgent: 'Mobile Safari',
         }}
         forceAndroidAutoplay={Platform.OS === 'android'}
-        useLocalHTML
       />
       {buffering ? (
         <View style={styles.bufferOverlay}>

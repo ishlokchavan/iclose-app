@@ -152,6 +152,36 @@ function EditField({
   );
 }
 
+// ─── Period picker ────────────────────────────────────────────────────────────
+
+function PeriodPicker({ value, onChange }: { value: Period; onChange: (v: Period) => void }) {
+  const [open, setOpen] = useState(false);
+  const label = PERIOD_OPTIONS.find((o) => o.value === value)?.label ?? 'All time';
+  return (
+    <>
+      <TouchableOpacity style={styles.periodBtn} onPress={() => setOpen(true)} activeOpacity={0.8}>
+        <Text style={styles.periodBtnText}>{label}</Text>
+        <Ionicons name="chevron-down" size={14} color="#6e6e73" />
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={styles.pickerBackdrop} activeOpacity={1} onPress={() => setOpen(false)}>
+          <View style={styles.pickerCard}>
+            {PERIOD_OPTIONS.map((opt) => (
+              <TouchableOpacity key={opt.value} style={styles.pickerItem}
+                onPress={() => { onChange(opt.value); setOpen(false); }} activeOpacity={0.7}>
+                <Text style={[styles.pickerItemText, value === opt.value && styles.pickerItemActive]}>
+                  {opt.label}
+                </Text>
+                {value === opt.value ? <Ionicons name="checkmark" size={16} color="#0071e3" /> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+}
+
 // ─── Invite Modal ─────────────────────────────────────────────────────────────
 
 function InviteModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
@@ -561,49 +591,28 @@ export default function UsersScreen() {
         ) : null}
       </View>
 
-      {/* Search */}
-      <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={18} color="#6e6e73" />
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search name or email…"
-          placeholderTextColor="#9a9aa5"
-          style={styles.searchInput}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-        />
-        {search.length > 0 ? (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color="#9a9aa5" />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      {/* Period filter */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.periodScroll}
-        contentContainerStyle={styles.periodRow}
-      >
-        {PERIOD_OPTIONS.map((opt) => {
-          const active = period === opt.value;
-          return (
-            <TouchableOpacity
-              key={opt.value}
-              onPress={() => setPeriod(opt.value)}
-              style={[styles.periodChip, active && styles.periodChipActive]}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.periodChipText, active && styles.periodChipTextActive]}>
-                {opt.label}
-              </Text>
+      {/* Search + period */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search-outline" size={16} color="#6e6e73" />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search name or email…"
+            placeholderTextColor="#9a9aa5"
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+          />
+          {search.length > 0 ? (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Ionicons name="close-circle" size={16} color="#9a9aa5" />
             </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+          ) : null}
+        </View>
+        <PeriodPicker value={period} onChange={setPeriod} />
+      </View>
 
       {/* Tabs */}
       <View style={styles.tabBar}>
@@ -689,28 +698,41 @@ const styles = StyleSheet.create({
   },
   inviteBtnText: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
 
-  searchWrap: {
+  searchRow: {
     flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: 16, marginBottom: 10,
-    paddingHorizontal: 12, paddingVertical: 10,
+    marginHorizontal: 16, marginBottom: 10, gap: 8,
+  },
+  searchWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 9,
     backgroundColor: '#ffffff', borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
   },
-  searchInput: { flex: 1, fontSize: 15, color: '#1d1d1f', marginLeft: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: '#1d1d1f', marginLeft: 6 },
 
-  periodScroll: { flexGrow: 0, flexShrink: 0, height: 44 },
-  periodRow: {
-    paddingHorizontal: 16, gap: 8,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  periodChip: {
-    paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, backgroundColor: '#ffffff',
+  periodBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#ffffff', borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#d2d2d7',
+    paddingHorizontal: 12, paddingVertical: 9,
   },
-  periodChipActive: { backgroundColor: '#0071e3', borderColor: '#0071e3' },
-  periodChipText:       { fontSize: 13, fontWeight: '500', color: '#6e6e73' },
-  periodChipTextActive: { color: '#ffffff', fontWeight: '600' },
+  periodBtnText: { fontSize: 13, fontWeight: '500', color: '#1d1d1f' },
+
+  pickerBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  pickerCard: {
+    backgroundColor: '#ffffff', borderRadius: 16,
+    width: '100%', maxWidth: 300, overflow: 'hidden', paddingVertical: 4,
+  },
+  pickerItem: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f0f0f5',
+  },
+  pickerItemText:   { fontSize: 15, color: '#1d1d1f' },
+  pickerItemActive: { color: '#0071e3', fontWeight: '600' },
 
   tabBar: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 10,

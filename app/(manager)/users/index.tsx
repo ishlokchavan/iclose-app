@@ -402,7 +402,6 @@ function UserDetailScreen({ user, currentUserId, canEditContact, onClose }: User
                   <View style={styles.card}>
                     <DetailRow label="Email"        value={cachedUser?.email ?? '—'} />
                     <DetailRow label="Role"         value={cachedUser ? capitalize(cachedUser.role) : '—'} />
-                    <DetailRow label="Plan"         value={capitalize(cachedUser?.plan_key ?? 'free')} />
                     <DetailRow label="Joined"       value={cachedUser ? fmtDateTime(cachedUser.created_at) : '—'} />
                     <DetailRow label="Last updated" value={cachedUser ? fmtDateTime(cachedUser.updated_at) : '—'} isLast />
                   </View>

@@ -34,14 +34,10 @@ export function InquiryCard({ inquiry, onPress, showUser = false }: InquiryCardP
     >
       <View className="flex-row items-start justify-between mb-2">
         <Text className="text-display-md text-ink font-semibold flex-1 mr-3" numberOfLines={1}>
-          {inquiry.title}
+          {inquiry.description}
         </Text>
         <Badge label={inquiry.status.replace('_', ' ')} variant={inquiry.status} />
       </View>
-
-      <Text className="text-body text-ink-muted mb-3" numberOfLines={2}>
-        {inquiry.description}
-      </Text>
 
       <View className="flex-row items-center gap-3 flex-wrap">
         {inquiry.area?.name ? (
@@ -50,9 +46,9 @@ export function InquiryCard({ inquiry, onPress, showUser = false }: InquiryCardP
           </View>
         ) : null}
 
-        {showUser && inquiry.user?.full_name ? (
+        {showUser && inquiry.learner?.full_name ? (
           <Text className="text-caption text-ink-tertiary">
-            By {inquiry.user.full_name}
+            By {inquiry.learner.full_name}
           </Text>
         ) : null}
 
@@ -60,15 +56,6 @@ export function InquiryCard({ inquiry, onPress, showUser = false }: InquiryCardP
           {formatDate(inquiry.created_at)}
         </Text>
       </View>
-
-      {inquiry.response ? (
-        <View className="mt-3 pt-3 border-t border-hairline">
-          <Text className="text-body-sm text-ink-muted font-medium mb-1">Response:</Text>
-          <Text className="text-body-sm text-ink" numberOfLines={3}>
-            {inquiry.response}
-          </Text>
-        </View>
-      ) : null}
     </TouchableOpacity>
   );
 }

@@ -2,16 +2,60 @@ export type UserRole = 'learner' | 'educator' | 'manager' | 'admin';
 
 export type TopicStatus = 'draft' | 'published' | 'archived';
 
-export type InquiryStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type InquiryStatus = 'open' | 'assigned' | 'in_progress' | 'closed';
 
 export interface Profile {
   id: string;
   full_name: string | null;
   email: string | null;
   avatar_url: string | null;
+  headline: string | null;
+  bio: string | null;
   role: UserRole;
+  plan_key: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface Lead {
+  id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  phone: string;
+  plan_key: string;
+  source: string | null;
+  is_verified: boolean;
+  verified_at: string | null;
+  created_at: string;
+}
+
+export type HireKind = 'intern' | 'specialist';
+
+export interface HireApplication {
+  id: string;
+  kind: HireKind;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  message: string | null;
+  status: string;
+  created_at: string;
+  referer?: string | null;
+  // intern-only
+  instagram?: string | null;
+  resume_path?: string | null;
+}
+
+export interface HireRemark {
+  id: string;
+  application_id: string;
+  content: string;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
 }
 
 export interface Area {
@@ -42,11 +86,18 @@ export interface Subtype {
 
 export interface Educator {
   id: string;
-  profile_id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
   bio: string | null;
-  specializations: string[] | null;
+  expertise: string | null;
+  photo_url: string | null;
+  status: string;
+  is_verified: boolean;
   created_at: string;
-  profile?: Profile;
+  updated_at: string;
 }
 
 export interface Topic {
@@ -55,17 +106,18 @@ export interface Topic {
   slug: string;
   description: string | null;
   youtube_id: string | null;
-  cover_image_url: string | null;
+  cover_url: string | null;
   status: TopicStatus;
   area_id: string | null;
+  subarea: string | null;
   type_id: string | null;
-  educator_id: string | null;
+  educator_record_id: string | null;
   resources: Resource[] | null;
   created_at: string;
   updated_at: string;
   area?: Area;
   property_type?: PropertyType;
-  educator?: Educator & { profile: Profile };
+  educator?: Educator;
 }
 
 export interface Resource {
@@ -84,20 +136,20 @@ export interface SavedTopic {
 
 export interface Inquiry {
   id: string;
-  user_id: string;
-  topic_id: string | null;
-  title: string;
+  learner_id: string | null;
   description: string;
+  email: string | null;
+  phone: string | null;
   area_id: string | null;
+  subarea: string | null;
   type_id: string | null;
+  source_topic_id: string | null;
+  assigned_educator_id: string | null;
   status: InquiryStatus;
-  response: string | null;
-  responded_by: string | null;
-  responded_at: string | null;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
-  user?: Profile;
-  topic?: Topic;
+  learner?: Profile;
   area?: Area;
   property_type?: PropertyType;
 }
